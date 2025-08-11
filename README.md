@@ -1,6 +1,6 @@
 # 通用 AI Prompt 助手 (双语版)
 
-![版本](https://img.shields.io/badge/版本-6.8-blue)
+![版本](https://img.shields.io/badge/版本-6.9-blue)
 ![许可证](https://img.shields.io/badge/许可证-MIT-green)
 ![Tampermonkey](https://img.shields.io/badge/油猴脚本-支持-orange)
 
@@ -133,7 +133,19 @@ const siteConfigs = {
 
 ## 📝 更新日志
 
-### v6.7 (当前版本)
+### v6.9 (当前版本)
+- **修复Google AI Studio输入问题**：基于丰富的修复经验，为AI Studio添加专门处理
+- **Angular框架支持**：针对AI Studio的Angular + Material Design架构优化
+- **增强contenteditable处理**：改进对contenteditable元素的内容设置逻辑
+- **统一特殊处理框架**：将AI Studio纳入特殊处理网站列表
+
+### v6.8
+- **修复通义千问状态检测问题**：增强事件序列，确保提交按钮解锁和输入框自适应
+- **完整事件链处理**：添加focus→beforeinput→input→change→blur完整序列
+- **焦点管理优化**：通过blur/focus切换强制触发状态更新
+- **智能延迟处理**：分散事件触发时间，确保框架正确响应
+
+### v6.7
 - **修复部分输入问题**：改为一次性设置完整内容，避免逐字符输入导致的状态混乱
 - **优化响应速度**：将延迟从200ms缩短到100ms，提升用户体验
 - **增强同步检查**：添加最终同步验证，确保内容完整显示
@@ -214,5 +226,5 @@ const siteConfigs = {
 ---
 
 **作者**: Sauterne
-**版本**: 6.7
+**版本**: 6.9
 **更新时间**: 2025年

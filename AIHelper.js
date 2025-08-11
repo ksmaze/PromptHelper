@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         通用 AI Prompt 助手 (双语版)
 // @namespace    http://tampermonkey.net/
-// @version      6.8
+// @version      7.0
 // @description  一个脚本通用 ChatGPT, Gemini, Claude, Kimi, DeepSeek, 腾讯元宝, Google AI Studio 等多个 AI 平台。提供可收缩的侧边栏，用于管理 Prompt 模板，并能一键复制或提交。
 // @author       Sauterne
 // @match        https://chat.openai.com/*
@@ -67,7 +67,7 @@
             'aistudio.google.com': {
                 name: 'Google AI Studio',
                 shadowRootSelector: 'app-root',
-                inputSelector: '[contenteditable="true"][aria-label*="Prompt"]'
+                inputSelector: '[contenteditable="true"], textarea, [role="textbox"], [aria-label*="prompt"], [aria-label*="Prompt"], [placeholder*="prompt"], [placeholder*="Prompt"], .prompt-input, #prompt-input, input[type="text"]'
             }
         };
 
@@ -186,7 +186,13 @@
 
         function findInputElement() {
             const siteConfig = getCurrentSiteConfig();
-            if (!siteConfig) return null;
+            if (!siteConfig) {
+                console.log('[Prompt Helper] 未找到当前网站配置');
+                return null;
+            }
+            
+            console.log(`[Prompt Helper] 正在查找 ${window.location.hostname} 的输入元素...`);
+            console.log(`[Prompt Helper] 使用选择器: ${siteConfig.inputSelector}`);
             
             // 增强的输入元素查找逻辑
             let inputElement = null;
@@ -217,7 +223,73 @@
                 }
             }
             
-            // 3. 对于 DeepSeek，提供额外的回退查找逻辑
+            // 3. 对于 Google AI Studio，提供额外的回退查找逻辑
+            if (!inputElement && window.location.hostname.includes('aistudio.google.com')) {
+                console.log('[Prompt Helper] 启用Google AI Studio回退查找逻辑');
+                
+                // Google AI Studio 特殊查找策略
+                const aiStudioSelectors = [
+                    '[contenteditable="true"]',
+                    'textarea',
+                    '[role="textbox"]',
+                    '[aria-label*="prompt"]',
+                    '[aria-label*="Prompt"]', 
+                    '[aria-label*="message"]',
+                    '[aria-label*="Message"]',
+                    '[placeholder*="prompt"]',
+                    '[placeholder*="Prompt"]',
+                    '[placeholder*="message"]',
+                    '[placeholder*="Message"]',
+                    '[data-testid*="prompt"]',
+                    '[data-testid*="input"]',
+                    '.prompt-input',
+                    '.chat-input',
+                    '.message-input',
+                    'input[type="text"]',
+                    'div[spellcheck="true"]',
+                    '[data-lexical-editor]',
+                    '.editor-input'
+                ];
+                
+                for (const selector of aiStudioSelectors) {
+                    console.log(`[Prompt Helper] 尝试选择器: ${selector}`);
+                    const elements = document.querySelectorAll(selector);
+                    console.log(`[Prompt Helper] 找到 ${elements.length} 个匹配元素`);
+                    
+                    for (const element of elements) {
+                        // 排除脚本自己的元素并检查元素是否可见且可编辑
+                        if (!element.closest('#prompt-helper-container')) {
+                            const style = window.getComputedStyle(element);
+                            const isVisible = style.display !== 'none' && 
+                                            style.visibility !== 'hidden' && 
+                                            style.opacity !== '0';
+                            const isEditable = !element.disabled && 
+                                             !element.readOnly && 
+                                             (element.contentEditable === 'true' || 
+                                              element.tagName.toLowerCase() === 'textarea' || 
+                                              element.tagName.toLowerCase() === 'input');
+                            
+                            console.log(`[Prompt Helper] 检查元素:`, {
+                                tagName: element.tagName,
+                                className: element.className,
+                                id: element.id,
+                                contentEditable: element.contentEditable,
+                                isVisible,
+                                isEditable
+                            });
+                            
+                            if (isVisible && isEditable) {
+                                console.log(`[Prompt Helper] 找到可用的AI Studio输入元素:`, element);
+                                inputElement = element;
+                                break;
+                            }
+                        }
+                    }
+                    if (inputElement) break;
+                }
+            }
+            
+            // 4. 对于 DeepSeek，提供额外的回退查找逻辑
             if (!inputElement && window.location.hostname.includes('deepseek.com')) {
                 // 更广泛的查找策略
                 const fallbackSelectors = [
@@ -250,6 +322,34 @@
                     }
                     if (inputElement) break;
                 }
+            }
+            
+            if (inputElement) {
+                console.log('[Prompt Helper] 成功找到输入元素:', {
+                    tagName: inputElement.tagName,
+                    className: inputElement.className,
+                    id: inputElement.id,
+                    placeholder: inputElement.placeholder,
+                    contentEditable: inputElement.contentEditable,
+                    element: inputElement
+                });
+            } else {
+                console.log('[Prompt Helper] 未找到输入元素');
+                console.log('[Prompt Helper] 当前页面所有可能的输入元素:');
+                
+                // 列出所有可能的输入元素供调试
+                const allInputs = document.querySelectorAll('textarea, input, [contenteditable="true"], [role="textbox"]');
+                allInputs.forEach((el, index) => {
+                    console.log(`[Prompt Helper] 候选元素 ${index + 1}:`, {
+                        tagName: el.tagName,
+                        className: el.className,
+                        id: el.id,
+                        placeholder: el.placeholder,
+                        contentEditable: el.contentEditable,
+                        isVisible: window.getComputedStyle(el).display !== 'none',
+                        element: el
+                    });
+                });
             }
             
             return inputElement;
@@ -645,7 +745,7 @@
                     }, 100);
                     
                     // 更长延迟的额外同步检查 - 支持多个网站
-                    const specialSites = ['deepseek.com', 'kimi.moonshot.cn', 'tongyi.com', 'yuanbao.tencent.com'];
+                    const specialSites = ['deepseek.com', 'kimi.moonshot.cn', 'tongyi.com', 'yuanbao.tencent.com', 'aistudio.google.com'];
                     const currentSite = specialSites.find(site => window.location.hostname.includes(site));
                     
                     if (currentSite) {
@@ -771,10 +871,65 @@
                                         // 腾讯元宝特殊处理
                                         console.log('[Prompt Helper] 应用腾讯元宝特殊处理');
                                         inputElement.setAttribute('value', finalPrompt);
+                                    } else if (currentSite === 'aistudio.google.com') {
+                                        // Google AI Studio 特殊处理 - Angular + Material Design
+                                        console.log('[Prompt Helper] 应用Google AI Studio Angular特殊处理');
+                                        
+                                        // 方法1: Angular 组件状态操作
+                                        const angularKey = Object.keys(inputElement).find(key => 
+                                            key.startsWith('__ngContext') || 
+                                            key.startsWith('__ng') ||
+                                            key.includes('angular')
+                                        );
+                                        
+                                        if (angularKey) {
+                                            console.log('[Prompt Helper] 发现Angular组件实例');
+                                            try {
+                                                // 尝试触发Angular的变更检测
+                                                const ngZone = window.ng?.getComponent?.(inputElement);
+                                                if (ngZone) {
+                                                    ngZone.run(() => {
+                                                        inputElement.value = finalPrompt;
+                                                        if (inputElement.textContent !== undefined) {
+                                                            inputElement.textContent = finalPrompt;
+                                                        }
+                                                    });
+                                                }
+                                            } catch (e) {
+                                                console.log('[Prompt Helper] Angular状态操作失败:', e);
+                                            }
+                                        }
+                                        
+                                        // 方法2: Material Design 输入框处理
+                                        if (inputElement.getAttribute('contenteditable') === 'true') {
+                                            inputElement.innerHTML = '';
+                                            const lines = finalPrompt.split('\n');
+                                            lines.forEach((line, index) => {
+                                                if (index > 0) {
+                                                    inputElement.appendChild(document.createElement('br'));
+                                                }
+                                                const textNode = document.createTextNode(line);
+                                                inputElement.appendChild(textNode);
+                                            });
+                                        }
+                                        
+                                        // 方法3: 强制触发Material Design的输入事件
+                                        const mdEvents = [
+                                            new Event('focus', { bubbles: true }),
+                                            new InputEvent('input', { bubbles: true, cancelable: true, inputType: 'insertText' }),
+                                            new Event('change', { bubbles: true }),
+                                            new Event('blur', { bubbles: true })
+                                        ];
+                                        
+                                        mdEvents.forEach((event, index) => {
+                                            setTimeout(() => {
+                                                inputElement.dispatchEvent(event);
+                                            }, index * 20);
+                                        });
                                     }
                                     
-                                    // 一次性设置完整内容（通义千问跳过，已经在上面处理）
-                                    if (currentSite !== 'tongyi.com') {
+                                    // 一次性设置完整内容（通义千问和AI Studio跳过，已经在上面处理）
+                                    if (currentSite !== 'tongyi.com' && currentSite !== 'aistudio.google.com') {
                                         console.log(`[Prompt Helper] ${currentSite}一次性设置完整内容`);
                                         inputElement.value = finalPrompt;
                                         if (displayDiv) {
@@ -782,8 +937,8 @@
                                         }
                                     }
                                     
-                                    // 触发关键事件（通义千问跳过，已经在上面处理）
-                                    if (currentSite !== 'tongyi.com') {
+                                    // 触发关键事件（通义千问和AI Studio跳过，已经在上面处理）
+                                    if (currentSite !== 'tongyi.com' && currentSite !== 'aistudio.google.com') {
                                         const events = [
                                             new InputEvent('beforeinput', { bubbles: true, cancelable: true, data: finalPrompt, inputType: 'insertText' }),
                                             new InputEvent('input', { bubbles: true, cancelable: true, data: finalPrompt, inputType: 'insertText' }),
@@ -792,8 +947,10 @@
                                         
                                         events.forEach(event => inputElement.dispatchEvent(event));
                                         console.log(`[Prompt Helper] ${currentSite}一次性设置完成`);
-                                    } else {
+                                    } else if (currentSite === 'tongyi.com') {
                                         console.log('[Prompt Helper] 通义千问特殊处理完成');
+                                    } else if (currentSite === 'aistudio.google.com') {
+                                        console.log('[Prompt Helper] Google AI Studio特殊处理完成');
                                     }
                                     
                                     // 最终确认和清理
