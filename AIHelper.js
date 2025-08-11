@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         通用 AI Prompt 助手 (双语版)
 // @namespace    http://tampermonkey.net/
-// @version      6.5
+// @version      6.8
 // @description  一个脚本通用 ChatGPT, Gemini, Claude, Kimi, DeepSeek, 腾讯元宝, Google AI Studio 等多个 AI 平台。提供可收缩的侧边栏，用于管理 Prompt 模板，并能一键复制或提交。
 // @author       Sauterne
 // @match        https://chat.openai.com/*
@@ -426,48 +426,85 @@
                                 }
                             }
                             
-                            // 方法2: 强制设置值并触发完整事件序列
+                            // 方法2: 直接设置完整内容（避免逐字符导致的状态混乱）
                             inputElement.focus();
                             inputElement.value = '';
                             
-                            // 逐字符输入模拟（对于严格的受控组件）
-                            for (let i = 0; i < finalPrompt.length; i++) {
-                                const currentValue = finalPrompt.substring(0, i + 1);
-                                
-                                // 设置属性
-                                inputElement.value = currentValue;
-                                Object.defineProperty(inputElement, 'value', {
-                                    value: currentValue,
-                                    writable: true,
-                                    configurable: true
-                                });
-                                
-                                // 触发输入事件
-                                const inputEvent = new InputEvent('input', {
+                            // 直接设置完整内容
+                            inputElement.value = finalPrompt;
+                            Object.defineProperty(inputElement, 'value', {
+                                value: finalPrompt,
+                                writable: true,
+                                configurable: true
+                            });
+                            
+                            // 触发完整的事件序列以确保React状态更新
+                            const events = [
+                                new Event('focus', { bubbles: true }),
+                                new InputEvent('beforeinput', { 
+                                    bubbles: true, 
+                                    cancelable: true, 
+                                    data: finalPrompt,
+                                    inputType: 'insertText'
+                                }),
+                                new InputEvent('input', {
                                     bubbles: true,
                                     cancelable: true,
-                                    data: finalPrompt[i],
+                                    data: finalPrompt,
                                     inputType: 'insertText'
-                                });
-                                inputElement.dispatchEvent(inputEvent);
-                            }
-                            
-                            // 最终事件序列
-                            const finalEvents = [
+                                }),
                                 new Event('change', { bubbles: true }),
-                                new Event('blur', { bubbles: true }),
-                                new KeyboardEvent('keydown', { bubbles: true, key: 'Enter' }),
-                                new KeyboardEvent('keyup', { bubbles: true, key: 'Enter' })
+                                new KeyboardEvent('keydown', { bubbles: true, key: 'a' }), // 模拟键盘输入
+                                new KeyboardEvent('keyup', { bubbles: true, key: 'a' }),
+                                new Event('blur', { bubbles: true })
                             ];
                             
-                            finalEvents.forEach(event => inputElement.dispatchEvent(event));
+                            events.forEach((event, index) => {
+                                // 分散触发事件，给React足够时间处理
+                                setTimeout(() => {
+                                    inputElement.dispatchEvent(event);
+                                }, index * 10);
+                            });
                             
-                            // 延迟聚焦和最终确认
+                            // 最终状态同步和React状态强制更新
                             setTimeout(() => {
-                                inputElement.focus();
-                                inputElement.value = finalPrompt;
-                                inputElement.dispatchEvent(new Event('input', { bubbles: true }));
-                            }, 200);
+                                if (inputElement.value !== finalPrompt) {
+                                    console.log('[Prompt Helper] 进行最终同步修正');
+                                    inputElement.value = finalPrompt;
+                                }
+                                
+                                // 强制触发React状态更新以解锁提交按钮和调整输入框大小
+                                console.log('[Prompt Helper] 强制触发React状态更新');
+                                
+                                // 模拟用户焦点切换来强制状态更新
+                                inputElement.blur();
+                                setTimeout(() => {
+                                    inputElement.focus();
+                                    
+                                    // 再次确保值被设置
+                                    inputElement.value = finalPrompt;
+                                    
+                                    // 触发强力的状态更新事件
+                                    const forceEvents = [
+                                        new InputEvent('input', { 
+                                            bubbles: true, 
+                                            cancelable: true, 
+                                            data: finalPrompt,
+                                            inputType: 'insertText' 
+                                        }),
+                                        new Event('change', { bubbles: true }),
+                                        new Event('propertychange', { bubbles: true }) // IE兼容事件
+                                    ];
+                                    
+                                    forceEvents.forEach(event => {
+                                        inputElement.dispatchEvent(event);
+                                    });
+                                    
+                                    // 手动触发resize以调整输入框大小
+                                    window.dispatchEvent(new Event('resize'));
+                                    
+                                }, 50);
+                            }, 150); // 稍微延长以确保所有事件都被处理
                             
                         } else {
                             inputElement.value = finalPrompt;

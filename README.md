@@ -1,6 +1,6 @@
 # 通用 AI Prompt 助手 (双语版)
 
-![版本](https://img.shields.io/badge/版本-6.5-blue)
+![版本](https://img.shields.io/badge/版本-6.8-blue)
 ![许可证](https://img.shields.io/badge/许可证-MIT-green)
 ![Tampermonkey](https://img.shields.io/badge/油猴脚本-支持-orange)
 
@@ -133,7 +133,18 @@ const siteConfigs = {
 
 ## 📝 更新日志
 
-### v6.5 (当前版本)
+### v6.7 (当前版本)
+- **修复部分输入问题**：改为一次性设置完整内容，避免逐字符输入导致的状态混乱
+- **优化响应速度**：将延迟从200ms缩短到100ms，提升用户体验
+- **增强同步检查**：添加最终同步验证，确保内容完整显示
+- **简化事件处理**：优化事件序列，减少不必要的复杂性
+
+### v6.6
+- **修复通义千问自动提交问题**：移除Enter键事件，避免内容自动发送
+- **完善用户控制体验**：确保内容只填入输入框，由用户决定何时提交
+- **保持React状态操作**：维持v6.5的突破性React状态管理功能
+
+### v6.5
 - **深度修复通义千问React状态问题**：直接操作React内部状态和受控组件
 - **多路径React状态访问**：尝试多种React属性路径找到onChange处理器
 - **强制属性重写**：使用Object.defineProperty强制设置value属性
@@ -203,5 +214,5 @@ const siteConfigs = {
 ---
 
 **作者**: Sauterne
-**版本**: 6.4
+**版本**: 6.7
 **更新时间**: 2025年
