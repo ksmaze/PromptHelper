@@ -1,305 +1,208 @@
-# 通用 AI Prompt 助手 (双语版)
+# PromptHelper - Universal AI Assistant Userscript
 
-![版本](https://img.shields.io/badge/版本-1.0-blue)
-![许可证](https://img.shields.io/badge/许可证-MIT-green)
-![Tampermonkey](https://img.shields.io/badge/油猴脚本-支持-orange)
+![Version](https://img.shields.io/badge/Version-1.0-blue)
+![License](https://img.shields.io/badge/License-MIT-green)
+![Tampermonkey](https://img.shields.io/badge/Tampermonkey-Supported-orange)
 
-一个强大的通用型油猴脚本，为多个主流 AI 平台提供统一的 Prompt 模板管理功能。支持可收缩的侧边栏界面，让您能够高效地管理、复制和提交 Prompt 模板。
+A powerful universal userscript that provides unified Prompt template management functionality across multiple mainstream AI platforms. Features a sidebar interface with template management, content replacement, and one-click input, enabling efficient use of preset Prompt templates across various AI platforms.
 
-## ✨ 主要特性
+## ✨ Key Features
 
-### 🌐 多平台支持
+### 🌐 Universal Platform Support
 - **ChatGPT** (chat.openai.com / chatgpt.com)
-- **Gemini** (gemini.google.com) 
-- **Claude** (claude.ai / demo.fuclaude.com)
-- **Kimi** (kimi.moonshot.cn)
+- **Google Gemini** (gemini.google.com) 
+- **Claude** (claude.ai)
+- **Kimi** (kimi.com / kimi.moonshot.cn)
 - **DeepSeek** (chat.deepseek.com)
-- **通义千问** (tongyi.com)
-- **腾讯元宝** (yuanbao.tencent.com)
+- **Tongyi Qianwen** (tongyi.com)
+- **Tencent Yuanbao** (yuanbao.tencent.com)
 - **Google AI Studio** (aistudio.google.com)
 
-### 🎛️ 核心功能
-- **模板管理**：创建、编辑、删除和保存 Prompt 模板
-- **双语界面**：支持中英文切换，满足不同用户需求
-- **一键操作**：支持复制到剪贴板和直接填入平台输入框
-- **变量替换**：使用 `{User Question}` 占位符实现动态内容替换
-- **持久化存储**：自动保存模板到本地，下次访问时恢复
+### 🎛️ Core Functionality
+- **Template Management**: Create, edit, delete, and save Prompt templates
+- **Bilingual Interface**: Support for Chinese/English language switching
+- **Dynamic Replacement**: Use `{User Question}` placeholder for dynamic content replacement
+- **One-Click Actions**: Support for copying to clipboard and direct input into platform text boxes
+- **Local Storage**: Template data automatically saved locally with cross-session persistence
 
-### 🔧 技术特色
-- **Shadow DOM 兼容**：自动处理封闭的 Shadow DOM，确保在现代 Web 应用中正常工作
-- **智能输入框识别**：针对不同平台的输入框特性进行了专门适配
-- **响应式设计**：优雅的可收缩侧边栏，不影响原网站使用体验
+### 🔧 Technical Highlights
+- **Shadow DOM Fix**: Automatically converts closed Shadow DOM to open mode
+- **Smart Input Detection**: Specialized input element selectors adapted for each platform
+- **Claude Linebreak Preservation**: Uses paste method to perfectly maintain linebreaks in Claude's ProseMirror editor
+- **Cross-Framework Compatibility**: Supports React, Angular, Vue, and other modern frontend frameworks
+- **Precise Event Simulation**: Uses optimal event triggering strategies for different platforms
 
-## 🚀 安装方法
+## 🚀 Installation
 
-### 前置要求
-确保您的浏览器已安装 [Tampermonkey](https://www.tampermonkey.net/) 扩展。
+### Prerequisites
+Ensure your browser has the [Tampermonkey](https://www.tampermonkey.net/) extension installed.
 
-### 安装步骤
-1. 复制 `AIHelper.js` 文件内容
-2. 打开 Tampermonkey 管理面板
-3. 点击"创建新脚本"
-4. 粘贴脚本内容并保存
-5. 访问任意支持的 AI 平台即可使用
+### Installation Steps
+1. Copy the `PromptHelper.js` file content
+2. Open Tampermonkey dashboard
+3. Click "Create a new script"
+4. Paste the script content and save
+5. Visit any supported AI platform to start using
 
-## 📖 使用指南
+## 📖 User Guide
 
-### 基本操作
-1. **打开助手**：访问支持的AI平台后，点击页面右侧的"助手"按钮
-2. **选择模板**：从下拉菜单中选择预设或自定义的模板
-3. **输入问题**：在"您的问题"区域填入具体问题
-4. **使用模板**：
-   - 点击"复制到剪贴板"：将最终的 Prompt 复制到系统剪贴板
-   - 点击"填入提问栏"：直接将 Prompt 填入平台的输入框
+### Interface Overview
 
-### 模板管理
-- **新建模板**：点击"新建"按钮创建空白模板
-- **编辑模板**：选择现有模板后修改名称和内容
-- **保存模板**：点击"保存"按钮保存更改
-- **删除模板**：选择模板后点击"删除"按钮（需确认）
+After installing the script, you'll see a blue "Helper" button on the right side of the page:
 
-### 变量使用
-在模板内容中使用 `{User Question}` 作为占位符，运行时会被替换为您在问题区域输入的具体内容。
+![Sidebar Button](pictures/small.png)
 
-**示例：**
+Clicking the button expands the full operation panel. The script supports bilingual Chinese/English interface:
+
+**Chinese Interface:**
+![Chinese Interface](pictures/big-zh.png)
+
+**English Interface:**
+![English Interface](pictures/big-en.png)
+
+### Basic Operations
+1. **Open Assistant**: After visiting a supported AI platform, click the "Helper" button on the right side of the page
+2. **Switch Language**: Click the "中/En" button in the top-left corner of the panel to switch interface language
+3. **Select Template**: Choose from preset or custom templates in the dropdown menu
+4. **Input Question**: Enter your specific question in the "Your Question" area
+5. **Use Template**:
+   - Click "Copy to Clipboard": Copy the final Prompt to system clipboard
+   - Click "Fill into Input": Directly fill the Prompt into the platform's input box
+
+### Template Management
+- **New Template**: Click "New" button to create a blank template
+- **Edit Template**: Select an existing template and modify its name and content
+- **Save Template**: Click "Save" button to save changes
+- **Delete Template**: Select a template and click "Delete" button (confirmation required)
+
+### Variable Replacement Mechanism
+Use `{User Question}` as a placeholder in template content, which will be automatically replaced with the content you enter in the question area at runtime.
+
+**Example Template:**
 ```
-请基于以下问题，提供一个清晰、结构化且全面的回答。
+Please provide a clear, structured, and comprehensive answer based on the following question.
 
-用户问题：
+User Question:
 {User Question}
 ```
 
-## 📋 预设模板
+### Quick Start
 
-脚本内置了3个实用的模板：
+#### First Time Use
+1. After installing the script, visit any supported AI platform
+2. Click the "Helper" button on the right side of the page to open the panel
+3. Try using the built-in "General Response Template"
+4. Enter in the question area: "How to make delicious Italian pasta?"
+5. Click "Fill into Input" to experience the one-click fill functionality
 
-1. **通用回答模板**：适用于一般性问题咨询
-2. **代码评审模板**：专为代码审查和优化建议设计
-3. **英文润色模板**：用于英文文本的语法和表达优化
+#### Advanced Usage
+- **Create Custom Templates**: Design specialized Prompt templates based on your work needs
+- **Multi-Platform Sync**: Use the same template library across different AI platforms
+- **Linebreak Formatting**: Use linebreaks and blank lines in templates to improve Prompt readability
 
-## 🔧 配置说明
+## 📋 Built-in Templates
 
-### 网站配置
-脚本为每个支持的平台配置了专门的输入框选择器：
+The script comes with 3 simple and practical preset templates:
 
-```javascript
-const siteConfigs = {
-    'openai.com': { name: 'ChatGPT', inputSelector: '#prompt-textarea' },
-    'gemini.google.com': {
-        name: 'Gemini',
-        shadowRootSelector: 'chat-app',
-        inputSelector: 'div.initial-input-area textarea, rich-textarea .ql-editor, [contenteditable="true"][role="textbox"]'
-    },
-    // ... 其他平台配置
-};
-```
+1. **General Response Template**: Suitable for general inquiries and in-depth analysis
+2. **Code Review Template**: Designed specifically for code review, performance analysis, and optimization suggestions
+3. **English Polishing Template**: For grammar checking and expression optimization of English text
 
-### 数据存储
-- 模板数据：存储键名 `universal_prompt_helper_prompts`
-- 语言设置：存储键名 `universal_prompt_helper_lang`
+## 🎨 Interface Design
 
-## 🎨 界面特性
+- **Fixed Sidebar**: Right-side fixed position, doesn't interfere with original website layout
+- **Collapsible Design**: Click "×" button to collapse panel, saving screen space
+- **Smooth Animation**: Uses CSS3 transition for expand/collapse animations
+- **Responsive Layout**: Button groups with adaptive layout supporting different screen sizes
+- **Style Isolation**: Completely isolated CSS styles prevent conflicts with original websites
 
-- **固定位置侧边栏**：不影响原网站布局
-- **优雅的动画效果**：平滑的展开/收起动画
-- **响应式按钮组**：自适应布局的操作按钮
-- **深色模式友好**：适配各种主题风格
+## 🔍 FAQ
 
-## 🛠️ 开发信息
+### Q: Why do linebreaks disappear after filling content on some platforms?
+A: This is due to different editor implementations across platforms. The script has implemented a specialized linebreak preservation mechanism for Claude's ProseMirror editor to ensure complete linebreak format retention.
 
-### 技术栈
-- 纯 JavaScript ES6+
-- Tampermonkey API
-- CSS3 动画和 Flexbox 布局
+### Q: Which browsers does the script support?
+A: Supports all mainstream browsers (Chrome, Firefox, Edge, Safari), but requires the Tampermonkey extension.
 
-### 关键技术点
-1. **Shadow DOM 修复**：重写 `Element.prototype.attachShadow` 方法
-2. **跨域兼容**：使用 `@grant` 权限访问存储 API
-3. **事件处理**：使用现代事件监听器和委托模式
-4. **DOM 操作**：高效的元素创建和样式注入
+### Q: Will template data be lost?
+A: No. All template data is saved in local browser storage unless you manually clear browser data or uninstall the script.
 
-### 权限说明
-- `GM_setValue` / `GM_getValue`：用于数据持久化存储
-- `GM_addStyle`：注入自定义样式
-- `@run-at document-start`：确保在页面加载前运行关键修复代码
+### Q: Can I use it on multiple AI platforms simultaneously?
+A: Yes. The script automatically recognizes the current platform and enables corresponding functionality.
 
-## 🐛 问题反馈
+## 🛠️ Development Information
 
-如果您在使用过程中遇到问题，请提供以下信息：
-- 浏览器类型和版本
-- Tampermonkey 版本
-- 具体的 AI 平台
-- 错误描述和复现步骤
+### Tech Stack
+- **Pure JavaScript ES6+**: No external dependencies
+- **Tampermonkey API**: Data storage and style injection
+- **CSS3**: Flexbox layout and animation effects
+- **DOM API**: Native DOM manipulation and event handling
 
-## 📝 更新日志
+### Core Technical Features
+1. **Shadow DOM Compatibility**: Automatically converts closed shadow DOM to open mode
+2. **Cross-Framework Support**: Supports React, Angular, Vue, and other modern frontend frameworks
+3. **Smart Input Recognition**: Multi-level input element finding strategy
+4. **Event Simulation Optimization**: Uses optimal event sequences for different platforms
 
-### v1.0 (当前版本) 🎯 - 全新重构版本
-- **代码全面重构**：从零开始重新设计，消除所有历史遗留问题
-- **Claude换行保真修复**：借鉴最佳实践，完美支持Claude ProseMirror编辑器的换行保持
-- **智能HTML生成**：将文本转换为`<p>&nbsp;</p>`格式，保留连续空行和首尾空行
-- **粘贴事件优化**：使用`ClipboardEvent`进行ProseMirror友好的内容插入
-- **Shadow DOM支持**：正确处理Gemini和Google AI Studio的Shadow DOM结构
-- **精确选择器配置**：每个平台使用专门优化的输入元素选择器
-- **最小化事件触发**：避免事件风暴，只触发必要的DOM事件
-- **跨平台兼容性**：ChatGPT、Claude、Gemini、Kimi、DeepSeek、通义、元宝、AI Studio全面支持
+### Permission Description
+- `GM_setValue` / `GM_getValue`: Local storage for template data and settings
+- `GM_addStyle`: Inject custom styles to avoid conflicts with original websites
+- `@run-at document-start`: Run Shadow DOM fixes before page loading
 
-### v8.1
-- **修复保护条件判断逻辑**：正确识别多段落情况，避免无效循环保护
-- **增强段落检测**：区分单段落包装和多段落正确格式
+## 📝 Changelog
 
-### v8.0
-- **彻底解决Claude换行问题**：完美修复Claude ProseMirror的换行格式化冲突
-- **极致宽松文本匹配**：完全移除所有空白字符进行纯文本内容对比
-- **智能保护机制**：Claude自动格式化不再影响换行保护触发
-- **跨浏览器完美兼容**：Chrome/Edge/Firefox均能稳定保持换行格式
-- **全平台统一体验**：ChatGPT、Claude、其他平台换行处理完全一致
+### v1.0 (Current Version)
+**🎯 Complete Architecture Redesign**
+- **Complete Code Refactor**: Redesigned from scratch based on modern JavaScript standards, improving performance and stability
+- **Claude Linebreak Preservation**: Uses paste method to perfectly solve Claude ProseMirror editor linebreak format issues
+- **Smart HTML Conversion**: Converts plain text to `<p>` and `<br>` structures, perfectly adapting to rich text editors
+- **Shadow DOM Support**: Automatically handles closed Shadow DOM for Gemini and Google AI Studio
+- **Precise Platform Adaptation**: Each platform uses specially optimized input element selectors
+- **Event Optimization**: Minimizes event triggering, avoiding performance issues and conflicts
+- **Universal Platform Compatibility**: Perfect support for 8 major AI platforms
 
-### v7.9
-- **智能文本标准化**：发现Claude会添加额外空格，使用标准化文本匹配
-- **Chrome内核优化**：针对Chrome/Edge的文本格式化差异进行适配
-- **调试信息完善**：详细的文本差异对比便于问题定位
+**🔧 Major Technical Breakthroughs**
+- **OpenAI Linebreak Protection**: Fixes Chrome kernel ChatGPT textarea linebreak clearing issues
+- **React State Management**: Deep integration with React controlled components, solving state update issues for platforms like Tongyi Qianwen
+- **Angular Framework Adaptation**: Specialized optimization for Google AI Studio's Angular + Material Design architecture
+- **Lexical Editor Support**: Perfect adaptation for Kimi's Lexical rich text editor
+- **Multi-Level Fallback Mechanism**: Smart input element finding ensuring normal operation under various page structures
 
-### v7.8
-- **文本差异调试版本**：添加完整的文本内容对比分析
-- **精确问题定位**：通过控制台日志精确发现Claude文本修改行为
+## 🛡️ Privacy & Security
 
-### v7.7
-- **调试条件判断**：修复保护条件逻辑，添加详细的条件检查日志
-- **问题诊断增强**：通过完整的条件状态输出定位触发失败原因
+- **Local Storage**: All data is only saved locally in your browser, never uploaded to any server
+- **Open Source Transparency**: Code is completely open source, script behavior can be inspected at any time
+- **Minimal Permissions**: Only uses necessary Tampermonkey permissions
+- **No External Dependencies**: Doesn't rely on any third-party services or libraries
 
-### v7.6
-- **修复Claude ProseMirror段落包装问题**：解决Claude将内容自动包装成`<p>`标签导致换行消失
-- **智能段落和换行处理**：区分双换行（段落）和单换行（br标签）
-- **ProseMirror兼容性优化**：使用`<p>` + `<br>`组合符合ProseMirror的HTML结构期望
-- **增强保护触发条件**：检测`<p>`标签包装和缺少`<br>`标签两种情况
+## 🐛 Issue Reporting
 
-### v7.5  
-- **修复ChatGPT ProseMirror支持**：发现ChatGPT现在使用contenteditable ProseMirror编辑器
-- **统一ProseMirror处理**：ChatGPT和Claude都使用相同的ProseMirror换行保护逻辑
-- **增强调试信息**：添加详细的保护过程日志，便于问题诊断
-- **跨平台兼容性**：确保Chrome内核下的换行保护机制正确触发
+If you encounter issues during use, please provide the following information:
+- **Browser type and version**
+- **Tampermonkey version**
+- **Specific AI platform and URL**
+- **Error description and reproduction steps**
+- **Browser console error messages** (press F12 to view)
 
-### v7.4
-- **详细调试版本**：添加完整的保护过程日志输出
-- **问题诊断优化**：通过控制台日志精确定位换行清理时机
-- **保护机制监控**：实时显示内容变化和保护触发情况
+## 📄 License
 
-### v7.3
-- **解决Chrome内核换行被清理问题**：修复Chrome/Edge下换行内容瞬间消失的问题
-- **智能内容保护机制**：持续监控并阻止前端框架清理换行格式
-- **Chrome专门优化**：针对Chrome内核的DOM处理差异进行特殊优化
-- **双重保护策略**：填入内容后持续2秒监控，确保换行格式不被意外清除
+This project is open source under the [MIT License](https://opensource.org/licenses/MIT).
 
-### v7.2
-- **Chrome内核增强处理**：为Chrome/Edge浏览器添加专门的换行处理逻辑
-- **模拟真实用户操作**：通过粘贴事件和逐字符输入模拟真实用户行为
-- **跨浏览器兼容性**：区分Firefox和Chrome内核，使用不同的处理策略
-- **强化事件触发**：增强input事件序列，确保框架正确响应
+## 🤝 Contributing
 
-### v7.1
-- **修复Claude和OpenAI换行问题**：专门解决Claude和ChatGPT输入时丢失换行格式的问题
-- **Claude ProseMirror支持**：为Claude的contenteditable编辑器实现正确的HTML换行结构
-- **OpenAI textarea优化**：确保ChatGPT的textarea正确保持换行并触发高度调整
-- **精准修复策略**：只修复Claude和OpenAI，不影响其他已正常工作的平台
+Contributions are welcome! You can:
+- Report bugs or suggest features
+- Submit code improvements or new features
+- Improve documentation or add usage examples
+- Share your usage experiences and best practices
 
-### v7.0  
-- **大幅增强调试功能**：为Google AI Studio添加详细的元素查找和调试日志
-- **扩展AI Studio选择器**：支持更多可能的输入元素选择器
-- **智能回退查找**：当主选择器失败时，自动尝试多种备用查找策略
-- **可见性和可编辑性检查**：确保找到的元素真正可用于输入
+## 📞 Contact
 
-### v6.9
-- **修复Google AI Studio输入问题**：基于丰富的修复经验，为AI Studio添加专门处理
-- **Angular框架支持**：针对AI Studio的Angular + Material Design架构优化
-- **增强contenteditable处理**：改进对contenteditable元素的内容设置逻辑
-- **统一特殊处理框架**：将AI Studio纳入特殊处理网站列表
-
-### v6.8
-- **修复通义千问状态检测问题**：增强事件序列，确保提交按钮解锁和输入框自适应
-- **完整事件链处理**：添加focus→beforeinput→input→change→blur完整序列
-- **焦点管理优化**：通过blur/focus切换强制触发状态更新
-- **智能延迟处理**：分散事件触发时间，确保框架正确响应
-
-### v6.7
-- **修复部分输入问题**：改为一次性设置完整内容，避免逐字符输入导致的状态混乱
-- **优化响应速度**：将延迟从200ms缩短到100ms，提升用户体验
-- **增强同步检查**：添加最终同步验证，确保内容完整显示
-- **简化事件处理**：优化事件序列，减少不必要的复杂性
-
-### v6.6
-- **修复通义千问自动提交问题**：移除Enter键事件，避免内容自动发送
-- **完善用户控制体验**：确保内容只填入输入框，由用户决定何时提交
-- **保持React状态操作**：维持v6.5的突破性React状态管理功能
-
-### v6.5
-- **深度修复通义千问React状态问题**：直接操作React内部状态和受控组件
-- **多路径React状态访问**：尝试多种React属性路径找到onChange处理器
-- **强制属性重写**：使用Object.defineProperty强制设置value属性
-- **逐字符输入模拟**：完全模拟用户真实输入过程
-- **延迟确认机制**：添加延迟处理确保React状态更新完成
-
-### v6.4
-- **修复通义千问Ant Design问题**：专门针对通义千问的Ant Design框架优化
-- **双重处理策略**：在textarea和特殊处理两个层面都增加了通义千问支持
-- **模拟真实用户输入**：为Ant Design框架提供完整的事件序列
-- **避免处理冲突**：为通义千问跳过通用处理，防止事件冲突
-
-### v6.3
-- **修复元素识别问题**：解决通义千问和腾讯元宝找错输入元素的问题
-- **修复Kimi重复填入**：避免Kimi网站内容被填写两遍的问题
-- **修复兼容性错误**：解决setSelectionRange在非支持元素上的报错
-- **优化元素过滤**：排除脚本自己的输入框，确保找到正确的目标元素
-- **简化处理逻辑**：避免不必要的重复处理，提升性能和稳定性
-
-### v6.2
-- **扩展多平台支持**：修复 Kimi、通义千问、腾讯元宝的输入框问题
-- **统一处理框架**：为四个主要平台提供统一的输入处理逻辑
-- **增强选择器覆盖**：扩展每个平台的输入元素选择器范围
-- **特定平台优化**：针对 Kimi 的 Lexical 编辑器和其他平台特性优化
-
-### v6.1
-- **优化用户体验**：改为一次性填入内容，移除流式打字效果
-- **修复重复填入问题**：解决内容被填写两遍的问题
-- **简化事件逻辑**：移除冗余的处理方法，保持核心功能
-- **提升响应速度**：缩短延迟时间，提供更快的响应
-
-### v6.0
-- **革命性DeepSeek修复**：React状态直接操作，完美模拟真实用户输入
-- **完整键盘事件序列**：keydown→keypress→beforeinput→input→keyup模拟
-- **多重输入策略**：6种不同方法确保兼容性
-- **解决提交按钮问题**：修复按钮disabled和内容消失问题
-
-### v5.8
-- **彻底修复 DeepSeek 输入框问题**：针对 DeepSeek 的 textarea + div 双重架构进行专门处理
-- **同步显示内容**：解决 textarea 值更新但显示区域不更新的问题
-- **增强键盘事件模拟**：添加键盘事件和组合事件以触发框架响应
-- **多重延迟同步**：使用多个延迟检查确保内容正确显示
-- **智能显示元素查找**：基于实际 HTML 结构精确定位显示元素
-
-### v5.7
-- **修复 DeepSeek 输入框问题**：增强对 DeepSeek 平台的输入框识别和填入逻辑
-- **提升鲁棒性**：改进输入元素查找算法，支持多种类型的输入框
-- **防止第三方干扰**：增强样式隔离，防止其他脚本或扩展影响功能
-- **智能回退机制**：为 DeepSeek 提供多层次的输入框查找策略
-- **调试功能**：添加控制台日志帮助诊断输入框识别问题
-- **增强事件处理**：支持更多事件类型以确保现代框架识别输入变化
-
-### v5.6
-- 支持多个主流 AI 平台
-- 完善的 Shadow DOM 兼容性
-- 双语界面支持
-- 优化用户体验
-
-## 📄 许可证
-
-本项目采用 [MIT 许可证](https://opensource.org/licenses/MIT)。
-
-## 🤝 贡献
-
-欢迎提交 Issue 和 Pull Request 来改进这个项目！
+- **Author**: Sauterne
+- **Project URL**: https://github.com/dongshuyan/PromptHelper
+- **License**: MIT
+- **Latest Version**: v1.0
 
 ---
 
-**作者**: Sauterne
-**版本**: 1.0
-**更新时间**: 2025年
+> **💡 Tip**: If you find this script useful, feel free to share it with more friends who might need it!

@@ -1,19 +1,32 @@
 // ==UserScript==
-// @name         通用 AI Prompt 助手 (双语版，Claude换行保真修复)
+// @name         PromptHelper
 // @namespace    http://tampermonkey.net/
 // @version      1.0
-// @description  通用 ChatGPT, Gemini, Claude, Kimi, DeepSeek, 通义、元宝、Google AI Studio 等。保留 v7.5 的稳定行为；仅对 Claude 采用“粘贴法”以保真换行（含连续空行/首尾空行）。
+// @description  PromptHelper：通用于 ChatGPT, Gemini, Claude, Kimi, DeepSeek, 通义、元宝、Google AI Studio 的侧边模板助手。保留 v7.5 稳定行为；对 Claude 采用“粘贴法”保真换行；修复 OpenAI 出现 <<<...>>> 被解析为 <<>> 的问题（仅 OpenAI 上处理）。
 // @author       Sauterne
+// @match        http://chat.openai.com/*
 // @match        https://chat.openai.com/*
+// @match        http://chatgpt.com/*
 // @match        https://chatgpt.com/*
+// @match        http://gemini.google.com/*
 // @match        https://gemini.google.com/*
+// @match        http://claude.ai/*
 // @match        https://claude.ai/*
+// @match        http://demo.fuclaude.com/*
 // @match        https://demo.fuclaude.com/*
-// @match        https://kimi.moonshot.cn/*
+// @match        http://www.kimi.com/*
 // @match        https://www.kimi.com/*
+// @match        http://kimi.com/*
+// @match        https://kimi.com/*
+// @match        http://kimi.moonshot.cn/*
+// @match        https://kimi.moonshot.cn/*
+// @match        http://chat.deepseek.com/*
 // @match        https://chat.deepseek.com/*
+// @match        http://www.tongyi.com/*
 // @match        https://www.tongyi.com/*
+// @match        http://yuanbao.tencent.com/chat/*
 // @match        https://yuanbao.tencent.com/chat/*
+// @match        http://aistudio.google.com/*
 // @match        https://aistudio.google.com/*
 // @grant        GM_setValue
 // @grant        GM_getValue
@@ -95,6 +108,11 @@
             },
             'claude.ai': { name: 'Claude', inputSelector: '.ProseMirror[contenteditable="true"]' },
             'fuclaude.com': { name: 'Claude', inputSelector: '.ProseMirror[contenteditable="true"]' },
+            // 兼容新老 Kimi 域名
+            'kimi.com': {
+                name: 'Kimi',
+                inputSelector: 'div.chat-input-editor[data-lexical-editor="true"], div[contenteditable="true"], textarea, [role="textbox"], [data-lexical-editor]'
+            },
             'kimi.moonshot.cn': {
                 name: 'Kimi',
                 inputSelector: 'div.chat-input-editor[data-lexical-editor="true"], div[contenteditable="true"], textarea, [role="textbox"], [data-lexical-editor]'
@@ -125,10 +143,10 @@
             "prompt_3": { name: "英文润色模板", template: `Please act as an English polisher. Your task is to refine the following text, improving its grammar, clarity, and style while preserving the original meaning. Please provide the polished version directly without any explanation unless I ask for it.\n\nOriginal text:\n"{User Question}"` }
         };
 
-        // --- 国际化文本 ---
+        // --- 国际化文本（按钮保留“Helper”，标题保持“PromptHelper”） ---
         const translations = {
             zh: {
-                toggleButton: "助手", panelTitle: "Prompt 助手", collapseTitle: "收起", selectTemplate: "选择模板", newBtn: "新建",
+                toggleButton: "Helper", panelTitle: "PromptHelper", collapseTitle: "收起", selectTemplate: "选择模板", newBtn: "新建",
                 saveBtn: "保存", deleteBtn: "删除", templateName: "模板名称", templateNamePlaceholder: "为您的模板命名",
                 templateContent: "模板内容 (使用 {User Question} 作为占位符)", yourQuestion: "您的问题",
                 yourQuestionPlaceholder: "在此输入您的具体问题...", copyBtn: "复制到剪贴板", copiedBtn: "已复制！",
@@ -138,7 +156,7 @@
                 alertSubmitError: "未找到当前网站的输入框。", alertTemplateError: "请先选择或创建一个模板！"
             },
             en: {
-                toggleButton: "Helper", panelTitle: "Prompt Helper", collapseTitle: "Collapse", selectTemplate: "Select Template", newBtn: "New",
+                toggleButton: "Helper", panelTitle: "PromptHelper", collapseTitle: "Collapse", selectTemplate: "Select Template", newBtn: "New",
                 saveBtn: "Save", deleteBtn: "Delete", templateName: "Template Name", templateNamePlaceholder: "Name your template",
                 templateContent: "Template Content (use {User Question} as placeholder)", yourQuestion: "Your Question",
                 yourQuestionPlaceholder: "Enter your specific question here...", copyBtn: "Copy to Clipboard", copiedBtn: "Copied!",
@@ -234,12 +252,12 @@
         function findInputElement() {
             const siteConfig = getCurrentSiteConfig();
             if (!siteConfig) {
-                console.log('[Prompt Helper] 未找到当前网站配置');
+                console.log('[PromptHelper] 未找到当前网站配置');
                 return null;
             }
 
-            console.log(`[Prompt Helper] 正在查找 ${window.location.hostname} 的输入元素...`);
-            console.log(`[Prompt Helper] 使用选择器: ${siteConfig.inputSelector}`);
+            console.log(`[PromptHelper] 正在查找 ${window.location.hostname} 的输入元素...`);
+            console.log(`[PromptHelper] 使用选择器: ${siteConfig.inputSelector}`);
 
             // 增强的输入元素查找逻辑
             let inputElement = null;
@@ -308,7 +326,7 @@
             }
 
             if (inputElement) {
-                console.log('[Prompt Helper] 成功找到输入元素:', {
+                console.log('[PromptHelper] 成功找到输入元素:', {
                     tagName: inputElement.tagName,
                     className: inputElement.className,
                     id: inputElement.id,
@@ -317,10 +335,10 @@
                     element: inputElement
                 });
             } else {
-                console.log('[Prompt Helper] 未找到输入元素');
+                console.log('[PromptHelper] 未找到输入元素');
                 const allInputs = document.querySelectorAll('textarea, input, [contenteditable="true"], [role="textbox"]');
                 allInputs.forEach((el, index) => {
-                    console.log(`[Prompt Helper] 候选元素 ${index + 1}:`, {
+                    console.log(`[PromptHelper] 候选元素 ${index + 1}:`, {
                         tagName: el.tagName,
                         className: el.className,
                         id: el.id,
@@ -447,7 +465,7 @@
                 if (!finalPrompt) return;
                 const inputElement = findInputElement();
                 if (inputElement) {
-                    console.log('[Prompt Helper] 找到输入元素:', {
+                    console.log('[PromptHelper] 找到输入元素:', {
                         tagName: inputElement.tagName,
                         className: inputElement.className,
                         id: inputElement.id,
@@ -489,7 +507,7 @@
                                         }
                                     }
                                 } catch (e) {
-                                    console.log('[Prompt Helper] React状态操作失败:', e);
+                                    console.log('[PromptHelper] React状态操作失败:', e);
                                 }
                             }
 
@@ -614,14 +632,14 @@
                             } catch (_){}
                         } else {
                             // —— 其它 contenteditable：继续使用 v7.5 的处理
-                            console.log('[Prompt Helper] contenteditable元素处理');
+                            console.log('[PromptHelper] contenteditable元素处理');
 
                             if (window.location.hostname.includes('claude.ai') ||
                                 window.location.hostname.includes('fuclaude.com') ||
                                 window.location.hostname.includes('openai.com') ||
                                 window.location.hostname.includes('chatgpt.com')) {
                                 // ProseMirror 保持换行（v7.5 的方式）
-                                console.log('[Prompt Helper] 应用ProseMirror换行保持处理');
+                                console.log('[PromptHelper] 应用ProseMirror换行保持处理');
                                 inputElement.innerHTML = '';
 
                                 const lines = finalPrompt.split('\n');
@@ -633,7 +651,12 @@
 
                                 const isChrome = navigator.userAgent.includes('Chrome') && !navigator.userAgent.includes('Firefox');
                                 if (isChrome) {
-                                    const htmlWithBreaks = finalPrompt.replace(/\n/g, '<br>');
+                                    // *** 仅在 OpenAI/ChatGPT 上对 innerHTML 写入做转义，防止 <<<...>>> 被当作标签剔除 ***
+                                    const needEscape = (window.location.hostname.includes('openai.com') || window.location.hostname.includes('chatgpt.com'));
+                                    const htmlWithBreaks = needEscape
+                                        ? escapeHtml(finalPrompt).replace(/\n/g, '<br>')
+                                        : finalPrompt.replace(/\n/g, '<br>');
+
                                     setTimeout(() => {
                                         inputElement.focus();
                                         inputElement.innerHTML = htmlWithBreaks;
@@ -741,24 +764,23 @@
                         inputElement.dispatchEvent(new Event('change', { bubbles: true }));
 
                         // 特殊站点延迟检查（仅状态检查，不重复设置）
-                        const specialSites = ['deepseek.com', 'kimi.moonshot.cn', 'tongyi.com', 'yuanbao.tencent.com'];
+                        const specialSites = ['deepseek.com', 'kimi.moonshot.cn', 'kimi.com', 'www.kimi.com', 'tongyi.com', 'yuanbao.tencent.com'];
                         const currentSiteCheck = specialSites.find(site => window.location.hostname.includes(site));
                         if (currentSiteCheck) {
-                            console.log(`[Prompt Helper] 延迟检查 ${currentSiteCheck} 状态`);
+                            console.log(`[PromptHelper] 延迟检查 ${currentSiteCheck} 状态`);
                         }
                     }, 100);
 
-                    // 额外同步检查（保持 v7.5；不再引用未定义的 displayDiv）
-                    const specialSites = ['deepseek.com', 'kimi.moonshot.cn', 'tongyi.com', 'yuanbao.tencent.com', 'aistudio.google.com'];
+                    // 额外同步检查（保持 v7.5）
+                    const specialSites = ['deepseek.com', 'kimi.moonshot.cn', 'kimi.com', 'www.kimi.com', 'tongyi.com', 'yuanbao.tencent.com', 'aistudio.google.com'];
                     const currentSite = specialSites.find(site => window.location.hostname.includes(site));
                     if (currentSite) {
-                        const skipComplexProcessing = currentSite === 'kimi.moonshot.cn'
+                        const skipComplexProcessing = (currentSite === 'kimi.moonshot.cn' || currentSite === 'kimi.com' || currentSite === 'www.kimi.com')
                             && inputElement.getAttribute('contenteditable') === 'true';
                         if (!skipComplexProcessing) {
                             setTimeout(() => {
                                 const parentDiv = inputElement.parentElement;
                                 if (parentDiv) {
-                                    // —— 仅做刷新/聚焦/Resize 等，无越界变量
                                     inputElement.blur();
                                     setTimeout(() => {
                                         inputElement.focus();
@@ -785,7 +807,7 @@
                                                 fiberNode.memoizedProps.onChange(fakeEvent);
                                             }
                                         } catch (e) {
-                                            console.log(`[Prompt Helper] ${currentSite} React状态更新失败:`, e);
+                                            console.log(`[PromptHelper] ${currentSite} React状态更新失败:`, e);
                                         }
                                     }
 
@@ -825,7 +847,7 @@
                                                     });
                                                 }
                                             } catch (e) {
-                                                console.log('[Prompt Helper] Angular状态操作失败:', e);
+                                                console.log('[PromptHelper] Angular状态操作失败:', e);
                                             }
                                         }
                                         if (inputElement.getAttribute('contenteditable') === 'true') {
