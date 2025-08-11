@@ -1,9 +1,9 @@
 // ==UserScript==
 // @name         通用 AI Prompt 助手 (双语版)
 // @namespace    http://tampermonkey.net/
-// @version      5.6
+// @version      1.0
 // @description  一个脚本通用 ChatGPT, Gemini, Claude, Kimi, DeepSeek, 腾讯元宝, Google AI Studio 等多个 AI 平台。提供可收缩的侧边栏，用于管理 Prompt 模板，并能一键复制或提交。
-// @author       Gemini & You
+// @author       Sauterne
 // @match        https://chat.openai.com/*
 // @match        https://chatgpt.com/*
 // @match        https://gemini.google.com/*
