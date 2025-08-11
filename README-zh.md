@@ -4,6 +4,8 @@
 ![许可证](https://img.shields.io/badge/许可证-MIT-green)
 ![Tampermonkey](https://img.shields.io/badge/油猴脚本-支持-orange)
 
+**语言版本**: [English](README.md) | [中文](README-zh.md)
+
 一个强大的通用型油猴脚本，为多个主流 AI 平台提供统一的 Prompt 模板管理功能。具备侧边栏界面，支持模板管理、内容替换和一键填入，让您在各大 AI 平台上高效使用预设的 Prompt 模板。
 
 ## ✨ 主要特性

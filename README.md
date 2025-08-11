@@ -4,6 +4,8 @@
 ![License](https://img.shields.io/badge/License-MIT-green)
 ![Tampermonkey](https://img.shields.io/badge/Tampermonkey-Supported-orange)
 
+**Language**: [English](README.md) | [中文](README-zh.md)
+
 A powerful universal userscript that provides unified Prompt template management functionality across multiple mainstream AI platforms. Features a sidebar interface with template management, content replacement, and one-click input, enabling efficient use of preset Prompt templates across various AI platforms.
 
 ## ✨ Key Features
