@@ -1,0 +1,17 @@
+# 忽略操作系统生成的文件
+.DS_Store
+Thumbs.db
+
+# 忽略日志文件
+*.log
+
+# 忽略构建产物和依赖目录
+/build/
+/node_modules/
+
+# 忽略敏感的配置文件
+config.ini
+
+#网页文件
+htmlfile/
+*.html
