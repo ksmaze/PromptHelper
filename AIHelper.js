@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name         通用 AI Prompt 助手 (双语版)
+// @name         通用 AI Prompt 助手 (双语版，Claude换行保真修复)
 // @namespace    http://tampermonkey.net/
-// @version      7.0
-// @description  一个脚本通用 ChatGPT, Gemini, Claude, Kimi, DeepSeek, 腾讯元宝, Google AI Studio 等多个 AI 平台。提供可收缩的侧边栏，用于管理 Prompt 模板，并能一键复制或提交。
+// @version      1.0
+// @description  通用 ChatGPT, Gemini, Claude, Kimi, DeepSeek, 通义、元宝、Google AI Studio 等。保留 v7.5 的稳定行为；仅对 Claude 采用“粘贴法”以保真换行（含连续空行/首尾空行）。
 // @author       Sauterne
 // @match        https://chat.openai.com/*
 // @match        https://chatgpt.com/*
@@ -10,6 +10,7 @@
 // @match        https://claude.ai/*
 // @match        https://demo.fuclaude.com/*
 // @match        https://kimi.moonshot.cn/*
+// @match        https://www.kimi.com/*
 // @match        https://chat.deepseek.com/*
 // @match        https://www.tongyi.com/*
 // @match        https://yuanbao.tencent.com/chat/*
@@ -25,7 +26,6 @@
     'use strict';
 
     // --- [核心修复] 应对 Closed Shadow DOM ---
-    // @run-at document-start 确保此代码在页面任何脚本执行前运行
     const originalAttachShadow = Element.prototype.attachShadow;
     Element.prototype.attachShadow = function(options) {
         if (options && options.mode === 'closed') {
@@ -33,6 +33,53 @@
         }
         return originalAttachShadow.call(this, options);
     };
+
+    // === 仅用于 Claude/ProseMirror 的“粘贴法”保真换行 ===
+    function escapeHtml(s) {
+        return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    }
+    // 把纯文本换行转成 <p> 与 <br>；空行用 <p>&nbsp;</p> 保留
+    function textToHtmlPreserveBlankLines(text) {
+        const lines = text.split('\n');
+        const paras = [];
+        let buf = [];
+        const flush = () => {
+            if (!buf.length) return;
+            const inner = buf.map(ln => escapeHtml(ln)).join('<br>');
+            paras.push(`<p>${inner}</p>`);
+            buf = [];
+        };
+        for (let i = 0; i < lines.length; i++) {
+            const ln = lines[i];
+            if (ln === '') { flush(); paras.push('<p>&nbsp;</p>'); }
+            else buf.push(ln);
+        }
+        flush();
+        if (paras.length === 0) paras.push('<p>&nbsp;</p>');
+        return paras.join('');
+    }
+    function pasteIntoProseMirror(editableEl, plainText) {
+        const html = textToHtmlPreserveBlankLines(plainText);
+        editableEl.focus();
+        let ok = false;
+        try {
+            const dt = new DataTransfer();
+            dt.setData('text/plain', plainText);
+            dt.setData('text/html', html);
+            const evt = new ClipboardEvent('paste', { bubbles:true, cancelable:true, clipboardData: dt });
+            ok = editableEl.dispatchEvent(evt);
+        } catch (_) { ok = false; }
+        if (!ok) {
+            try { document.execCommand('insertText', false, plainText); }
+            catch (_) {
+                editableEl.textContent = '';
+                editableEl.dispatchEvent(new Event('input', { bubbles: true }));
+                editableEl.textContent = plainText;
+                editableEl.dispatchEvent(new Event('input', { bubbles: true }));
+            }
+        }
+    }
+    // === 仅上面三函数是新增；其余保持 v7.5 原样 ===
 
     // --- 脚本主体逻辑 ---
     window.addEventListener('DOMContentLoaded', () => {
@@ -48,20 +95,20 @@
             },
             'claude.ai': { name: 'Claude', inputSelector: '.ProseMirror[contenteditable="true"]' },
             'fuclaude.com': { name: 'Claude', inputSelector: '.ProseMirror[contenteditable="true"]' },
-            'kimi.moonshot.cn': { 
-                name: 'Kimi', 
+            'kimi.moonshot.cn': {
+                name: 'Kimi',
                 inputSelector: 'div.chat-input-editor[data-lexical-editor="true"], div[contenteditable="true"], textarea, [role="textbox"], [data-lexical-editor]'
             },
-            'deepseek.com': { 
-                name: 'DeepSeek', 
+            'deepseek.com': {
+                name: 'DeepSeek',
                 inputSelector: 'textarea[placeholder*="随便聊点什么"], textarea[placeholder*="Ask me anything"], div[contenteditable="true"], #chat-input, [role="textbox"]'
             },
-            'tongyi.com': { 
-                name: '通义', 
+            'tongyi.com': {
+                name: '通义',
                 inputSelector: 'textarea[placeholder*="有问题，随时问通义"], textarea[placeholder*="问题"], textarea, div[contenteditable="true"], [role="textbox"]'
             },
-            'yuanbao.tencent.com': { 
-                name: '腾讯元宝', 
+            'yuanbao.tencent.com': {
+                name: '腾讯元宝',
                 inputSelector: 'textarea[placeholder*="输入问题"], textarea[placeholder*="问题"], textarea, div[contenteditable="true"], [role="textbox"]'
             },
             'aistudio.google.com': {
@@ -108,12 +155,12 @@
             GM_addStyle(`
                 /* 增强的样式隔离，防止第三方CSS干扰 */
                 #prompt-helper-container { all: initial !important; }
-                #prompt-helper-container *, #prompt-helper-container *::before, #prompt-helper-container *::after { 
-                    all: unset !important; 
-                    box-sizing: border-box !important; 
-                    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif !important; 
-                    margin: 0 !important; 
-                    padding: 0 !important; 
+                #prompt-helper-container *, #prompt-helper-container *::before, #prompt-helper-container *::after {
+                    all: unset !important;
+                    box-sizing: border-box !important;
+                    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif !important;
+                    margin: 0 !important;
+                    padding: 0 !important;
                     text-decoration: none !important;
                     border: none !important;
                     outline: none !important;
@@ -190,13 +237,13 @@
                 console.log('[Prompt Helper] 未找到当前网站配置');
                 return null;
             }
-            
+
             console.log(`[Prompt Helper] 正在查找 ${window.location.hostname} 的输入元素...`);
             console.log(`[Prompt Helper] 使用选择器: ${siteConfig.inputSelector}`);
-            
+
             // 增强的输入元素查找逻辑
             let inputElement = null;
-            
+
             // 1. 先尝试 Shadow DOM 查找
             if (siteConfig.shadowRootSelector) {
                 const host = document.querySelector(siteConfig.shadowRootSelector);
@@ -205,15 +252,13 @@
                     if (elementInShadow) inputElement = elementInShadow;
                 }
             }
-            
+
             // 2. 如果没有找到，尝试正常 DOM 查找
             if (!inputElement) {
-                // 尝试选择器中的每个部分，排除脚本自己的元素
                 const selectors = siteConfig.inputSelector.split(',').map(s => s.trim());
                 for (const selector of selectors) {
                     const elements = document.querySelectorAll(selector);
                     for (const element of elements) {
-                        // 排除脚本自己的元素
                         if (!element.closest('#prompt-helper-container')) {
                             inputElement = element;
                             break;
@@ -222,108 +267,46 @@
                     if (inputElement) break;
                 }
             }
-            
-            // 3. 对于 Google AI Studio，提供额外的回退查找逻辑
+
+            // 3. Google AI Studio 回退
             if (!inputElement && window.location.hostname.includes('aistudio.google.com')) {
-                console.log('[Prompt Helper] 启用Google AI Studio回退查找逻辑');
-                
-                // Google AI Studio 特殊查找策略
                 const aiStudioSelectors = [
-                    '[contenteditable="true"]',
-                    'textarea',
-                    '[role="textbox"]',
-                    '[aria-label*="prompt"]',
-                    '[aria-label*="Prompt"]', 
-                    '[aria-label*="message"]',
-                    '[aria-label*="Message"]',
-                    '[placeholder*="prompt"]',
-                    '[placeholder*="Prompt"]',
-                    '[placeholder*="message"]',
-                    '[placeholder*="Message"]',
-                    '[data-testid*="prompt"]',
-                    '[data-testid*="input"]',
-                    '.prompt-input',
-                    '.chat-input',
-                    '.message-input',
-                    'input[type="text"]',
-                    'div[spellcheck="true"]',
-                    '[data-lexical-editor]',
-                    '.editor-input'
+                    '[contenteditable="true"]','textarea','[role="textbox"]','[aria-label*="prompt"]','[aria-label*="Prompt"]','[aria-label*="message"]','[aria-label*="Message"]','[placeholder*="prompt"]','[placeholder*="Prompt"]','[placeholder*="message"]','[placeholder*="Message"]','[data-testid*="prompt"]','[data-testid*="input"]','.prompt-input','.chat-input','.message-input','input[type="text"]','div[spellcheck="true"]','[data-lexical-editor]','.editor-input'
                 ];
-                
                 for (const selector of aiStudioSelectors) {
-                    console.log(`[Prompt Helper] 尝试选择器: ${selector}`);
                     const elements = document.querySelectorAll(selector);
-                    console.log(`[Prompt Helper] 找到 ${elements.length} 个匹配元素`);
-                    
                     for (const element of elements) {
-                        // 排除脚本自己的元素并检查元素是否可见且可编辑
                         if (!element.closest('#prompt-helper-container')) {
                             const style = window.getComputedStyle(element);
-                            const isVisible = style.display !== 'none' && 
-                                            style.visibility !== 'hidden' && 
-                                            style.opacity !== '0';
-                            const isEditable = !element.disabled && 
-                                             !element.readOnly && 
-                                             (element.contentEditable === 'true' || 
-                                              element.tagName.toLowerCase() === 'textarea' || 
-                                              element.tagName.toLowerCase() === 'input');
-                            
-                            console.log(`[Prompt Helper] 检查元素:`, {
-                                tagName: element.tagName,
-                                className: element.className,
-                                id: element.id,
-                                contentEditable: element.contentEditable,
-                                isVisible,
-                                isEditable
-                            });
-                            
-                            if (isVisible && isEditable) {
-                                console.log(`[Prompt Helper] 找到可用的AI Studio输入元素:`, element);
-                                inputElement = element;
-                                break;
-                            }
+                            const isVisible = style.display !== 'none' && style.visibility !== 'hidden' && style.opacity !== '0';
+                            const isEditable = !element.disabled && !element.readOnly &&
+                                (element.contentEditable === 'true' || element.tagName.toLowerCase() === 'textarea' || element.tagName.toLowerCase() === 'input');
+                            if (isVisible && isEditable) { inputElement = element; break; }
                         }
                     }
                     if (inputElement) break;
                 }
             }
-            
-            // 4. 对于 DeepSeek，提供额外的回退查找逻辑
+
+            // 4. DeepSeek 回退
             if (!inputElement && window.location.hostname.includes('deepseek.com')) {
-                // 更广泛的查找策略
                 const fallbackSelectors = [
-                    'textarea',
-                    '[contenteditable="true"]',
-                    '[role="textbox"]',
-                    'input[type="text"]',
-                    '.chat-input',
-                    '[data-placeholder]',
-                    '[aria-label*="输入"]',
-                    '[aria-label*="input"]',
-                    '[placeholder*="聊"]',
-                    '[placeholder*="chat"]'
+                    'textarea','[contenteditable="true"]','[role="textbox"]','input[type="text"]','.chat-input','[data-placeholder]','[aria-label*="输入"]','[aria-label*="input"]','[placeholder*="聊"]','[placeholder*="chat"]'
                 ];
-                
                 for (const selector of fallbackSelectors) {
                     const elements = document.querySelectorAll(selector);
                     for (const element of elements) {
-                        // 排除脚本自己的元素并检查元素是否可见且可编辑
                         if (!element.closest('#prompt-helper-container')) {
                             const style = window.getComputedStyle(element);
-                            if (style.display !== 'none' && 
-                                style.visibility !== 'hidden' && 
-                                !element.disabled && 
-                                !element.readOnly) {
-                                inputElement = element;
-                                break;
+                            if (style.display !== 'none' && style.visibility !== 'hidden' && !element.disabled && !element.readOnly) {
+                                inputElement = element; break;
                             }
                         }
                     }
                     if (inputElement) break;
                 }
             }
-            
+
             if (inputElement) {
                 console.log('[Prompt Helper] 成功找到输入元素:', {
                     tagName: inputElement.tagName,
@@ -335,9 +318,6 @@
                 });
             } else {
                 console.log('[Prompt Helper] 未找到输入元素');
-                console.log('[Prompt Helper] 当前页面所有可能的输入元素:');
-                
-                // 列出所有可能的输入元素供调试
                 const allInputs = document.querySelectorAll('textarea, input, [contenteditable="true"], [role="textbox"]');
                 allInputs.forEach((el, index) => {
                     console.log(`[Prompt Helper] 候选元素 ${index + 1}:`, {
@@ -351,26 +331,22 @@
                     });
                 });
             }
-            
             return inputElement;
         }
 
         function init() {
             if (document.getElementById('prompt-helper-container')) return;
-            
-            // 防止多次初始化和第三方脚本干扰
             if (window.promptHelperInitialized) return;
             window.promptHelperInitialized = true;
-            
+
             injectStyles();
             const { container, elements: D } = buildUI();
-            
-            // 使用更安全的方式添加到 DOM
+
+            // 安全挂载
             const addToDOM = () => {
                 if (document.body) {
-            document.body.appendChild(container);
+                    document.body.appendChild(container);
                 } else {
-                    // 如果 body 还不存在，等待一下
                     setTimeout(addToDOM, 100);
                 }
             };
@@ -471,7 +447,6 @@
                 if (!finalPrompt) return;
                 const inputElement = findInputElement();
                 if (inputElement) {
-                    // 调试信息：在控制台记录找到的输入元素
                     console.log('[Prompt Helper] 找到输入元素:', {
                         tagName: inputElement.tagName,
                         className: inputElement.className,
@@ -481,36 +456,28 @@
                         type: inputElement.type,
                         element: inputElement
                     });
-                    
-                    // 增强的输入处理逻辑，支持多种类型的输入框
+
+                    // === v7.5 的逻辑：textarea 路径 ===
                     if (inputElement.tagName.toLowerCase() === 'textarea') {
-                        // 标准 textarea 处理
                         if (window.location.hostname.includes('tongyi.com')) {
-                            // 通义千问的 Ant Design + React 受控组件特殊处理
-                            console.log('[Prompt Helper] 通义千问 React+Ant Design 特殊处理');
-                            
-                            // 方法1: 尝试直接操作React内部状态
-                            const reactKey = Object.keys(inputElement).find(key => 
-                                key.startsWith('__reactInternalInstance') || 
+                            // —— 通义千问：保持 v7.5 原逻辑（React 受控组件）
+                            const reactKey = Object.keys(inputElement).find(key =>
+                                key.startsWith('__reactInternalInstance') ||
                                 key.startsWith('__reactFiber') ||
                                 key.startsWith('__reactProps')
                             );
-                            
+
                             if (reactKey) {
-                                console.log('[Prompt Helper] 发现通义千问React实例');
                                 try {
                                     const fiberNode = inputElement[reactKey];
-                                    // 尝试多种React属性路径
                                     const possiblePaths = [
                                         fiberNode?.memoizedProps?.onChange,
                                         fiberNode?.return?.memoizedProps?.onChange,
                                         fiberNode?.return?.return?.memoizedProps?.onChange,
                                         fiberNode?.pendingProps?.onChange
                                     ];
-                                    
                                     for (const onChange of possiblePaths) {
                                         if (onChange && typeof onChange === 'function') {
-                                            console.log('[Prompt Helper] 找到React onChange处理器');
                                             const fakeEvent = {
                                                 target: { value: finalPrompt },
                                                 currentTarget: { value: finalPrompt },
@@ -525,138 +492,195 @@
                                     console.log('[Prompt Helper] React状态操作失败:', e);
                                 }
                             }
-                            
-                            // 方法2: 直接设置完整内容（避免逐字符导致的状态混乱）
+
                             inputElement.focus();
                             inputElement.value = '';
-                            
-                            // 直接设置完整内容
                             inputElement.value = finalPrompt;
                             Object.defineProperty(inputElement, 'value', {
-                                value: finalPrompt,
-                                writable: true,
-                                configurable: true
+                                value: finalPrompt, writable: true, configurable: true
                             });
-                            
-                            // 触发完整的事件序列以确保React状态更新
+
                             const events = [
                                 new Event('focus', { bubbles: true }),
-                                new InputEvent('beforeinput', { 
-                                    bubbles: true, 
-                                    cancelable: true, 
-                                    data: finalPrompt,
-                                    inputType: 'insertText'
-                                }),
-                                new InputEvent('input', {
-                                    bubbles: true,
-                                    cancelable: true,
-                                    data: finalPrompt,
-                                    inputType: 'insertText'
-                                }),
+                                new InputEvent('beforeinput', { bubbles: true, cancelable: true, data: finalPrompt, inputType: 'insertText' }),
+                                new InputEvent('input', { bubbles: true, cancelable: true, data: finalPrompt, inputType: 'insertText' }),
                                 new Event('change', { bubbles: true }),
-                                new KeyboardEvent('keydown', { bubbles: true, key: 'a' }), // 模拟键盘输入
+                                new KeyboardEvent('keydown', { bubbles: true, key: 'a' }),
                                 new KeyboardEvent('keyup', { bubbles: true, key: 'a' }),
                                 new Event('blur', { bubbles: true })
                             ];
-                            
-                            events.forEach((event, index) => {
-                                // 分散触发事件，给React足够时间处理
-                                setTimeout(() => {
-                                    inputElement.dispatchEvent(event);
-                                }, index * 10);
-                            });
-                            
-                            // 最终状态同步和React状态强制更新
+                            events.forEach((ev, i) => setTimeout(() => inputElement.dispatchEvent(ev), i * 10));
+
                             setTimeout(() => {
                                 if (inputElement.value !== finalPrompt) {
-                                    console.log('[Prompt Helper] 进行最终同步修正');
                                     inputElement.value = finalPrompt;
                                 }
-                                
-                                // 强制触发React状态更新以解锁提交按钮和调整输入框大小
-                                console.log('[Prompt Helper] 强制触发React状态更新');
-                                
-                                // 模拟用户焦点切换来强制状态更新
                                 inputElement.blur();
                                 setTimeout(() => {
                                     inputElement.focus();
-                                    
-                                    // 再次确保值被设置
                                     inputElement.value = finalPrompt;
-                                    
-                                    // 触发强力的状态更新事件
-                                    const forceEvents = [
-                                        new InputEvent('input', { 
-                                            bubbles: true, 
-                                            cancelable: true, 
-                                            data: finalPrompt,
-                                            inputType: 'insertText' 
-                                        }),
-                                        new Event('change', { bubbles: true }),
-                                        new Event('propertychange', { bubbles: true }) // IE兼容事件
-                                    ];
-                                    
-                                    forceEvents.forEach(event => {
-                                        inputElement.dispatchEvent(event);
-                                    });
-                                    
-                                    // 手动触发resize以调整输入框大小
+                                    inputElement.dispatchEvent(new InputEvent('input', { bubbles: true, cancelable: true, data: finalPrompt, inputType: 'insertText' }));
+                                    inputElement.dispatchEvent(new Event('change', { bubbles: true }));
+                                    inputElement.dispatchEvent(new Event('propertychange', { bubbles: true }));
                                     window.dispatchEvent(new Event('resize'));
-                                    
                                 }, 50);
-                            }, 150); // 稍微延长以确保所有事件都被处理
-                            
+                            }, 150);
+
                         } else {
-                            inputElement.value = finalPrompt;
-                        }
-                        
-                        // 特殊处理：DeepSeek 的 textarea + div 架构
-                        if (window.location.hostname.includes('deepseek.com')) {
-                            // 查找相邻的显示元素
-                            const parentDiv = inputElement.parentElement;
-                            if (parentDiv) {
-                                // 查找显示内容的 div（基于实际的HTML结构）
-                                let displayDiv = parentDiv.querySelector('.b13855df');
-                                
-                                if (!displayDiv) {
-                                    // 回退方案：查找不是容器的div
-                                    const allDivs = parentDiv.querySelectorAll('div');
-                                    for (const div of allDivs) {
-                                        if (!div.classList.contains('_24fad49') && div !== parentDiv) {
-                                            displayDiv = div;
-                                            break;
+                            // —— OpenAI ChatGPT：保留 v7.5 的“换行保护”逻辑
+                            if ((window.location.hostname.includes('openai.com') || window.location.hostname.includes('chatgpt.com'))) {
+                                inputElement.value = finalPrompt;
+                                const isChrome = navigator.userAgent.includes('Chrome') && !navigator.userAgent.includes('Firefox');
+                                if (isChrome) {
+                                    setTimeout(() => {
+                                        inputElement.focus();
+                                        inputElement.value = finalPrompt;
+                                        if (typeof inputElement.setSelectionRange === 'function') {
+                                            inputElement.setSelectionRange(finalPrompt.length, finalPrompt.length);
                                         }
+                                        const inputEvent = new InputEvent('input', { bubbles: true, cancelable: false, inputType: 'insertText' });
+                                        inputElement.dispatchEvent(inputEvent);
+
+                                        let protectionCount = 0;
+                                        const protectTextareaContent = () => {
+                                            if (protectionCount < 20) {
+                                                const currentValue = inputElement.value;
+                                                if (currentValue.replace(/\n/g, '') === finalPrompt.replace(/\n/g, '') &&
+                                                    !currentValue.includes('\n') &&
+                                                    finalPrompt.includes('\n')) {
+                                                    inputElement.value = finalPrompt;
+                                                    if (typeof inputElement.setSelectionRange === 'function') {
+                                                        inputElement.setSelectionRange(finalPrompt.length, finalPrompt.length);
+                                                    }
+                                                    const restoreEvent = new InputEvent('input', { bubbles: true, cancelable: false, inputType: 'insertText' });
+                                                    inputElement.dispatchEvent(restoreEvent);
+                                                }
+                                                protectionCount++;
+                                                setTimeout(protectTextareaContent, 100);
+                                            }
+                                        };
+                                        setTimeout(protectTextareaContent, 100);
+                                    }, 50);
+                                } else {
+                                    const resizeEvent = new Event('input', { bubbles: true });
+                                    inputElement.dispatchEvent(resizeEvent);
+                                    if (typeof inputElement.setSelectionRange === 'function') {
+                                        inputElement.setSelectionRange(finalPrompt.length, finalPrompt.length);
                                     }
                                 }
-                                
-                                if (displayDiv) {
-                                    console.log('[Prompt Helper] 找到DeepSeek显示元素:', displayDiv);
-                                    // 清空并设置新内容
-                                    displayDiv.innerHTML = '';
-                                    const lines = finalPrompt.split('\n');
-                                    lines.forEach((line, index) => {
-                                        if (index > 0) {
-                                            displayDiv.appendChild(document.createElement('br'));
+                            } else {
+                                inputElement.value = finalPrompt;
+                            }
+
+                            // DeepSeek 的 textarea + div 架构（保留 v7.5）
+                            if (window.location.hostname.includes('deepseek.com')) {
+                                const parentDiv = inputElement.parentElement;
+                                if (parentDiv) {
+                                    let displayDiv = parentDiv.querySelector('.b13855df');
+                                    if (!displayDiv) {
+                                        const allDivs = parentDiv.querySelectorAll('div');
+                                        for (const div of allDivs) {
+                                            if (!div.classList.contains('_24fad49') && div !== parentDiv) { displayDiv = div; break; }
                                         }
-                                        displayDiv.appendChild(document.createTextNode(line));
-                                    });
-                                } else {
-                                    console.log('[Prompt Helper] 未找到DeepSeek显示元素，尝试直接设置textarea');
+                                    }
+                                    if (displayDiv) {
+                                        displayDiv.innerHTML = '';
+                                        const lines = finalPrompt.split('\n');
+                                        lines.forEach((line, index) => {
+                                            if (index > 0) displayDiv.appendChild(document.createElement('br'));
+                                            displayDiv.appendChild(document.createTextNode(line));
+                                        });
+                                    }
                                 }
                             }
                         }
+
+                    // === contenteditable 路径 ===
                     } else if (inputElement.getAttribute('contenteditable') === 'true') {
-                        // contenteditable 元素处理（简化版本，避免重复）
-                        console.log('[Prompt Helper] contenteditable元素直接设置文本');
-                        inputElement.textContent = finalPrompt;
-                        // 对于特殊网站，跳过后续的复杂处理以避免重复
-                        const skipComplexProcessing = ['kimi.moonshot.cn'].some(site => window.location.hostname.includes(site));
-                        if (skipComplexProcessing) {
-                            console.log('[Prompt Helper] 跳过复杂处理，避免重复');
+                        // —— Claude / fuclaude：仅这里改为“粘贴法”以保真换行
+                        if (window.location.hostname.includes('claude.ai') || window.location.hostname.includes('fuclaude.com')) {
+                            pasteIntoProseMirror(inputElement, finalPrompt);
+
+                            // 轻触发事件 + 将光标移到末尾（不做额外复杂改动）
+                            inputElement.dispatchEvent(new Event('input', { bubbles: true }));
+                            inputElement.dispatchEvent(new Event('change', { bubbles: true }));
+                            try {
+                                const range = document.createRange();
+                                const sel = window.getSelection();
+                                range.selectNodeContents(inputElement);
+                                range.collapse(false);
+                                sel.removeAllRanges();
+                                sel.addRange(range);
+                            } catch (_){}
+                        } else {
+                            // —— 其它 contenteditable：继续使用 v7.5 的处理
+                            console.log('[Prompt Helper] contenteditable元素处理');
+
+                            if (window.location.hostname.includes('claude.ai') ||
+                                window.location.hostname.includes('fuclaude.com') ||
+                                window.location.hostname.includes('openai.com') ||
+                                window.location.hostname.includes('chatgpt.com')) {
+                                // ProseMirror 保持换行（v7.5 的方式）
+                                console.log('[Prompt Helper] 应用ProseMirror换行保持处理');
+                                inputElement.innerHTML = '';
+
+                                const lines = finalPrompt.split('\n');
+                                lines.forEach((line, index) => {
+                                    if (index > 0) inputElement.appendChild(document.createElement('br'));
+                                    if (line.length > 0) inputElement.appendChild(document.createTextNode(line));
+                                    else if (index < lines.length - 1) inputElement.appendChild(document.createElement('br'));
+                                });
+
+                                const isChrome = navigator.userAgent.includes('Chrome') && !navigator.userAgent.includes('Firefox');
+                                if (isChrome) {
+                                    const htmlWithBreaks = finalPrompt.replace(/\n/g, '<br>');
+                                    setTimeout(() => {
+                                        inputElement.focus();
+                                        inputElement.innerHTML = htmlWithBreaks;
+
+                                        const range = document.createRange();
+                                        const selection = window.getSelection();
+                                        range.selectNodeContents(inputElement);
+                                        range.collapse(false);
+                                        selection.removeAllRanges();
+                                        selection.addRange(range);
+
+                                        const inputEvent = new InputEvent('input', { bubbles: true, cancelable: false, inputType: 'insertFromPaste' });
+                                        inputElement.dispatchEvent(inputEvent);
+
+                                        let protectionCount = 0;
+                                        const protectContent = () => {
+                                            if (protectionCount < 20) {
+                                                const currentHtml = inputElement.innerHTML;
+                                                const currentText = inputElement.textContent || inputElement.innerText;
+                                                if (currentText.replace(/\n/g, '') === finalPrompt.replace(/\n/g, '') &&
+                                                    !currentHtml.includes('<br>') &&
+                                                    finalPrompt.includes('\n')) {
+                                                    inputElement.innerHTML = htmlWithBreaks;
+                                                    try {
+                                                        const r = document.createRange();
+                                                        const s = window.getSelection();
+                                                        r.selectNodeContents(inputElement);
+                                                        r.collapse(false);
+                                                        s.removeAllRanges();
+                                                        s.addRange(r);
+                                                    } catch (_){}
+                                                }
+                                                protectionCount++;
+                                                setTimeout(protectContent, 100);
+                                            }
+                                        };
+                                        setTimeout(protectContent, 100);
+                                    }, 50);
+                                }
+                            } else {
+                                // 其它简单 contenteditable
+                                inputElement.textContent = finalPrompt;
+                            }
                         }
+
                     } else {
-                        // 其他类型的输入元素处理（如特殊的 React 组件）
-                        // 尝试多种方法来设置值
+                        // 其他输入类型兜底（保持 v7.5）
                         if ('value' in inputElement) {
                             inputElement.value = finalPrompt;
                         }
@@ -667,60 +691,42 @@
                             inputElement.innerText = finalPrompt;
                         }
                     }
-                    
-                    // 触发多种事件以确保输入被识别
+
+                    // === 通用事件触发（保持 v7.5；不使用外部未定义变量）===
                     const events = ['input', 'change', 'keydown', 'keyup', 'paste'];
                     events.forEach(eventType => {
                         const event = new Event(eventType, { bubbles: true, cancelable: true });
                         inputElement.dispatchEvent(event);
                     });
-                    
-                    // 特殊处理：针对 React 组件的额外事件
-                    const inputEvent = new InputEvent('input', { 
-                        bubbles: true, 
-                        cancelable: true, 
+
+                    const inputEvent = new InputEvent('input', {
+                        bubbles: true,
+                        cancelable: true,
                         data: finalPrompt,
                         inputType: 'insertText'
                     });
                     inputElement.dispatchEvent(inputEvent);
-                    
-                    // DeepSeek 特殊处理：模拟键盘输入
+
+                    // DeepSeek 键盘/合成事件（保留 v7.5）
                     if (window.location.hostname.includes('deepseek.com')) {
-                        console.log('[Prompt Helper] 应用DeepSeek特殊处理');
-                        
-                        // 模拟键盘事件
-                        const keyEvents = ['keydown', 'keypress', 'keyup'];
-                        keyEvents.forEach(eventType => {
+                        ['keydown', 'keypress', 'keyup'].forEach(eventType => {
                             const keyEvent = new KeyboardEvent(eventType, {
-                                bubbles: true,
-                                cancelable: true,
-                                key: 'a',
-                                code: 'KeyA',
-                                which: 65,
-                                keyCode: 65
+                                bubbles: true, cancelable: true, key: 'a', code: 'KeyA', which: 65, keyCode: 65
                             });
                             inputElement.dispatchEvent(keyEvent);
                         });
-                        
-                        // 尝试触发组合事件
                         inputElement.dispatchEvent(new Event('compositionstart', { bubbles: true }));
                         inputElement.dispatchEvent(new Event('compositionupdate', { bubbles: true }));
                         inputElement.dispatchEvent(new Event('compositionend', { bubbles: true }));
                     }
-                    
-                    // 聚焦和光标定位
+
+                    // 聚焦与光标（保持 v7.5）
                     inputElement.focus();
-                    
-                    // 尝试设置光标位置（添加错误处理）
                     if (inputElement.tagName.toLowerCase() === 'textarea' || inputElement.type === 'text') {
-                        try {
-                            inputElement.setSelectionRange(finalPrompt.length, finalPrompt.length);
-                        } catch (e) {
-                            console.log('[Prompt Helper] setSelectionRange 不支持此元素类型');
-                        }
+                        try { inputElement.setSelectionRange(finalPrompt.length, finalPrompt.length); } catch (_) {}
                     } else if (inputElement.getAttribute('contenteditable') === 'true') {
-                    const range = document.createRange();
-                    const sel = window.getSelection();
+                        const range = document.createRange();
+                        const sel = window.getSelection();
                         if (sel && inputElement.childNodes.length > 0) {
                             range.selectNodeContents(inputElement);
                             range.collapse(false);
@@ -728,56 +734,31 @@
                             sel.addRange(range);
                         }
                     }
-                    
-                    // 延迟再次触发事件以确保现代框架检测到变化
+
+                    // 轻微延迟再触发（保持 v7.5）
                     setTimeout(() => {
                         inputElement.dispatchEvent(new Event('input', { bubbles: true }));
                         inputElement.dispatchEvent(new Event('change', { bubbles: true }));
-                        
-                                            // 特殊网站的延迟检查（不设置内容，避免重复）
-                    const specialSites = ['deepseek.com', 'kimi.moonshot.cn', 'tongyi.com', 'yuanbao.tencent.com'];
-                    const currentSiteCheck = specialSites.find(site => window.location.hostname.includes(site));
-                    
-                    if (currentSiteCheck) {
-                        console.log(`[Prompt Helper] 延迟检查${currentSiteCheck}状态`);
-                        // 仅检查状态，不重复设置内容
-                    }
+
+                        // 特殊站点延迟检查（仅状态检查，不重复设置）
+                        const specialSites = ['deepseek.com', 'kimi.moonshot.cn', 'tongyi.com', 'yuanbao.tencent.com'];
+                        const currentSiteCheck = specialSites.find(site => window.location.hostname.includes(site));
+                        if (currentSiteCheck) {
+                            console.log(`[Prompt Helper] 延迟检查 ${currentSiteCheck} 状态`);
+                        }
                     }, 100);
-                    
-                    // 更长延迟的额外同步检查 - 支持多个网站
+
+                    // 额外同步检查（保持 v7.5；不再引用未定义的 displayDiv）
                     const specialSites = ['deepseek.com', 'kimi.moonshot.cn', 'tongyi.com', 'yuanbao.tencent.com', 'aistudio.google.com'];
                     const currentSite = specialSites.find(site => window.location.hostname.includes(site));
-                    
                     if (currentSite) {
-                        // 检查是否已经进行了简单处理，避免Kimi重复填入
-                        const skipComplexProcessing = currentSite === 'kimi.moonshot.cn' 
+                        const skipComplexProcessing = currentSite === 'kimi.moonshot.cn'
                             && inputElement.getAttribute('contenteditable') === 'true';
-                        
-                        if (skipComplexProcessing) {
-                            console.log(`[Prompt Helper] ${currentSite}已完成简单处理，跳过复杂处理避免重复`);
-                            return;
-                        }
-                        
-                        setTimeout(() => {
-                            const parentDiv = inputElement.parentElement;
-                            if (parentDiv) {
-                                const displayDiv = parentDiv.querySelector('.b13855df, div:not(._24fad49)');
-                                if (displayDiv) {
-                                    console.log('[Prompt Helper] 最终强制同步');
-                                    displayDiv.textContent = finalPrompt;
-                                    
-                                    // 额外的视觉刷新方法
-                                    console.log('[Prompt Helper] 触发视觉刷新');
-                                    
-                                    // 方法1：模拟点击来刷新界面
-                                    displayDiv.click();
-                                    
-                                    // 方法2：强制重绘
-                                    displayDiv.style.display = 'none';
-                                    displayDiv.offsetHeight; // 触发重排
-                                    displayDiv.style.display = '';
-                                    
-                                    // 方法3：模拟焦点变化
+                        if (!skipComplexProcessing) {
+                            setTimeout(() => {
+                                const parentDiv = inputElement.parentElement;
+                                if (parentDiv) {
+                                    // —— 仅做刷新/聚焦/Resize 等，无越界变量
                                     inputElement.blur();
                                     setTimeout(() => {
                                         inputElement.focus();
@@ -785,34 +766,16 @@
                                             if (inputElement.tagName.toLowerCase() === 'textarea' || inputElement.type === 'text') {
                                                 inputElement.setSelectionRange(finalPrompt.length, finalPrompt.length);
                                             }
-                                        } catch (e) {
-                                            console.log('[Prompt Helper] setSelectionRange 不支持此元素类型');
-                                        }
+                                        } catch (_) {}
                                     }, 50);
-                                    
-                                    // 方法4：触发resize事件（某些框架监听此事件）
                                     window.dispatchEvent(new Event('resize'));
-                                    
-                                    // 方法5：多网站统一的真实输入模拟
-                                    console.log(`[Prompt Helper] 开始${currentSite}完全重置并模拟真实输入`);
-                                    
-                                    // 完全清理状态
-                                    inputElement.value = '';
-                                    if (displayDiv) {
-                                        displayDiv.textContent = '';
-                                        displayDiv.innerHTML = '';
-                                    }
-                                    
-                                    // 确保焦点在正确位置
-                                    inputElement.focus();
-                                    
-                                    // 使用更强的方法：直接设置React内部状态
+
+                                    // —— React 受控组件：onChange 兜底（保持 v7.5 思路）
                                     const reactKey = Object.keys(inputElement).find(key => key.startsWith('__reactInternalInstance') || key.startsWith('__reactFiber'));
                                     if (reactKey) {
-                                        console.log(`[Prompt Helper] 发现${currentSite}React实例，尝试直接更新状态`);
                                         try {
                                             const fiberNode = inputElement[reactKey];
-                                            if (fiberNode && fiberNode.memoizedProps && fiberNode.memoizedProps.onChange) {
+                                            if (fiberNode && fiberNode.memoizedProps && typeof fiberNode.memoizedProps.onChange === 'function') {
                                                 const fakeEvent = {
                                                     target: { value: finalPrompt },
                                                     currentTarget: { value: finalPrompt },
@@ -822,158 +785,75 @@
                                                 fiberNode.memoizedProps.onChange(fakeEvent);
                                             }
                                         } catch (e) {
-                                            console.log(`[Prompt Helper] ${currentSite}React状态更新失败:`, e);
+                                            console.log(`[Prompt Helper] ${currentSite} React状态更新失败:`, e);
                                         }
                                     }
-                                    
-                                    // 针对不同网站的特殊处理
-                                    if (currentSite === 'kimi.moonshot.cn') {
-                                        // Kimi 特殊处理：可能使用Lexical编辑器
-                                        console.log('[Prompt Helper] 应用Kimi Lexical编辑器处理');
-                                        if (inputElement.getAttribute('data-lexical-editor')) {
-                                            // 尝试设置多种属性
-                                            if (inputElement.textContent !== undefined) {
-                                                inputElement.textContent = finalPrompt;
-                                            }
-                                            if (inputElement.innerText !== undefined) {
-                                                inputElement.innerText = finalPrompt;
-                                            }
-                                        }
-                                    } else if (currentSite === 'tongyi.com') {
-                                        // 通义千问特殊处理 - Ant Design框架
-                                        console.log('[Prompt Helper] 应用通义千问 Ant Design 特殊处理');
-                                        
-                                        // 方法1: 模拟完整的用户输入序列
+
+                                    // —— 站点定制（保持 v7.5）
+                                    if (currentSite === 'tongyi.com') {
                                         inputElement.focus();
                                         inputElement.value = '';
-                                        
-                                        // 模拟用户逐字符输入（Ant Design 通常监听这种方式）
-                                        const inputText = finalPrompt;
-                                        for (let i = 0; i < inputText.length; i++) {
-                                            const char = inputText[i];
-                                            inputElement.value += char;
-                                            
-                                            // 触发每个字符的事件
-                                            const events = [
-                                                new KeyboardEvent('keydown', { bubbles: true, cancelable: true, key: char }),
-                                                new InputEvent('input', { bubbles: true, cancelable: true, data: char, inputType: 'insertText' }),
-                                                new KeyboardEvent('keyup', { bubbles: true, cancelable: true, key: char })
+                                        const txt = finalPrompt;
+                                        for (let i = 0; i < txt.length; i++) {
+                                            const ch = txt[i];
+                                            inputElement.value += ch;
+                                            const seq = [
+                                                new KeyboardEvent('keydown', { bubbles: true, cancelable: true, key: ch }),
+                                                new InputEvent('input', { bubbles: true, cancelable: true, data: ch, inputType: 'insertText' }),
+                                                new KeyboardEvent('keyup', { bubbles: true, cancelable: true, key: ch })
                                             ];
-                                            events.forEach(event => inputElement.dispatchEvent(event));
+                                            seq.forEach(ev => inputElement.dispatchEvent(ev));
                                         }
-                                        
-                                        // 最终事件
                                         inputElement.dispatchEvent(new Event('change', { bubbles: true }));
                                         inputElement.dispatchEvent(new Event('blur', { bubbles: true }));
                                         setTimeout(() => inputElement.focus(), 50);
-                                        
                                     } else if (currentSite === 'yuanbao.tencent.com') {
-                                        // 腾讯元宝特殊处理
-                                        console.log('[Prompt Helper] 应用腾讯元宝特殊处理');
                                         inputElement.setAttribute('value', finalPrompt);
                                     } else if (currentSite === 'aistudio.google.com') {
-                                        // Google AI Studio 特殊处理 - Angular + Material Design
-                                        console.log('[Prompt Helper] 应用Google AI Studio Angular特殊处理');
-                                        
-                                        // 方法1: Angular 组件状态操作
-                                        const angularKey = Object.keys(inputElement).find(key => 
-                                            key.startsWith('__ngContext') || 
+                                        const angularKey = Object.keys(inputElement).find(key =>
+                                            key.startsWith('__ngContext') ||
                                             key.startsWith('__ng') ||
                                             key.includes('angular')
                                         );
-                                        
                                         if (angularKey) {
-                                            console.log('[Prompt Helper] 发现Angular组件实例');
                                             try {
-                                                // 尝试触发Angular的变更检测
                                                 const ngZone = window.ng?.getComponent?.(inputElement);
                                                 if (ngZone) {
                                                     ngZone.run(() => {
                                                         inputElement.value = finalPrompt;
-                                                        if (inputElement.textContent !== undefined) {
-                                                            inputElement.textContent = finalPrompt;
-                                                        }
+                                                        if (inputElement.textContent !== undefined) inputElement.textContent = finalPrompt;
                                                     });
                                                 }
                                             } catch (e) {
                                                 console.log('[Prompt Helper] Angular状态操作失败:', e);
                                             }
                                         }
-                                        
-                                        // 方法2: Material Design 输入框处理
                                         if (inputElement.getAttribute('contenteditable') === 'true') {
                                             inputElement.innerHTML = '';
-                                            const lines = finalPrompt.split('\n');
-                                            lines.forEach((line, index) => {
-                                                if (index > 0) {
-                                                    inputElement.appendChild(document.createElement('br'));
-                                                }
-                                                const textNode = document.createTextNode(line);
-                                                inputElement.appendChild(textNode);
+                                            finalPrompt.split('\n').forEach((line, idx) => {
+                                                if (idx > 0) inputElement.appendChild(document.createElement('br'));
+                                                inputElement.appendChild(document.createTextNode(line));
                                             });
                                         }
-                                        
-                                        // 方法3: 强制触发Material Design的输入事件
-                                        const mdEvents = [
-                                            new Event('focus', { bubbles: true }),
-                                            new InputEvent('input', { bubbles: true, cancelable: true, inputType: 'insertText' }),
-                                            new Event('change', { bubbles: true }),
-                                            new Event('blur', { bubbles: true })
-                                        ];
-                                        
-                                        mdEvents.forEach((event, index) => {
-                                            setTimeout(() => {
-                                                inputElement.dispatchEvent(event);
-                                            }, index * 20);
-                                        });
+                                        [ new Event('focus', { bubbles: true }),
+                                          new InputEvent('input', { bubbles: true, cancelable: true, inputType: 'insertText' }),
+                                          new Event('change', { bubbles: true }),
+                                          new Event('blur', { bubbles: true })
+                                        ].forEach((ev, i) => setTimeout(() => inputElement.dispatchEvent(ev), i * 20));
                                     }
-                                    
-                                    // 一次性设置完整内容（通义千问和AI Studio跳过，已经在上面处理）
-                                    if (currentSite !== 'tongyi.com' && currentSite !== 'aistudio.google.com') {
-                                        console.log(`[Prompt Helper] ${currentSite}一次性设置完整内容`);
-                                        inputElement.value = finalPrompt;
-                                        if (displayDiv) {
-                                            displayDiv.textContent = finalPrompt;
-                                        }
-                                    }
-                                    
-                                    // 触发关键事件（通义千问和AI Studio跳过，已经在上面处理）
-                                    if (currentSite !== 'tongyi.com' && currentSite !== 'aistudio.google.com') {
-                                        const events = [
-                                            new InputEvent('beforeinput', { bubbles: true, cancelable: true, data: finalPrompt, inputType: 'insertText' }),
-                                            new InputEvent('input', { bubbles: true, cancelable: true, data: finalPrompt, inputType: 'insertText' }),
-                                            new Event('change', { bubbles: true })
-                                        ];
-                                        
-                                        events.forEach(event => inputElement.dispatchEvent(event));
-                                        console.log(`[Prompt Helper] ${currentSite}一次性设置完成`);
-                                    } else if (currentSite === 'tongyi.com') {
-                                        console.log('[Prompt Helper] 通义千问特殊处理完成');
-                                    } else if (currentSite === 'aistudio.google.com') {
-                                        console.log('[Prompt Helper] Google AI Studio特殊处理完成');
-                                    }
-                                    
-                                    // 最终确认和清理
-                                    setTimeout(() => {
-                                        console.log(`[Prompt Helper] ${currentSite}最终确认内容正确性`);
-                                        
-                                        if (inputElement.value !== finalPrompt) {
-                                            console.log(`[Prompt Helper] ${currentSite}进行最终同步`);
-                                            inputElement.value = finalPrompt;
-                                            if (displayDiv && displayDiv.textContent !== finalPrompt) {
-                                                displayDiv.textContent = finalPrompt;
-                                            }
-                                            inputElement.dispatchEvent(new Event('input', { bubbles: true }));
-                                        } else {
-                                            console.log(`[Prompt Helper] ${currentSite}内容已正确同步`);
-                                        }
-                                        
-                                    }, 300);
                                 }
-                            }
-                        }, 500);
+
+                                // 最终确认
+                                setTimeout(() => {
+                                    if ('value' in inputElement && inputElement.value !== finalPrompt) {
+                                        inputElement.value = finalPrompt;
+                                        inputElement.dispatchEvent(new Event('input', { bubbles: true }));
+                                    }
+                                }, 300);
+                            }, 500);
+                        }
                     }
-                    
+
                     D.userQuestionTextarea.value = '';
                     D.contentPanel.classList.add('hidden');
                 } else {

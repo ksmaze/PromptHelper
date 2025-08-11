@@ -1,6 +1,6 @@
 # 通用 AI Prompt 助手 (双语版)
 
-![版本](https://img.shields.io/badge/版本-6.9-blue)
+![版本](https://img.shields.io/badge/版本-1.0-blue)
 ![许可证](https://img.shields.io/badge/许可证-MIT-green)
 ![Tampermonkey](https://img.shields.io/badge/油猴脚本-支持-orange)
 
@@ -133,7 +133,82 @@ const siteConfigs = {
 
 ## 📝 更新日志
 
-### v6.9 (当前版本)
+### v1.0 (当前版本) 🎯 - 全新重构版本
+- **代码全面重构**：从零开始重新设计，消除所有历史遗留问题
+- **Claude换行保真修复**：借鉴最佳实践，完美支持Claude ProseMirror编辑器的换行保持
+- **智能HTML生成**：将文本转换为`<p>&nbsp;</p>`格式，保留连续空行和首尾空行
+- **粘贴事件优化**：使用`ClipboardEvent`进行ProseMirror友好的内容插入
+- **Shadow DOM支持**：正确处理Gemini和Google AI Studio的Shadow DOM结构
+- **精确选择器配置**：每个平台使用专门优化的输入元素选择器
+- **最小化事件触发**：避免事件风暴，只触发必要的DOM事件
+- **跨平台兼容性**：ChatGPT、Claude、Gemini、Kimi、DeepSeek、通义、元宝、AI Studio全面支持
+
+### v8.1
+- **修复保护条件判断逻辑**：正确识别多段落情况，避免无效循环保护
+- **增强段落检测**：区分单段落包装和多段落正确格式
+
+### v8.0
+- **彻底解决Claude换行问题**：完美修复Claude ProseMirror的换行格式化冲突
+- **极致宽松文本匹配**：完全移除所有空白字符进行纯文本内容对比
+- **智能保护机制**：Claude自动格式化不再影响换行保护触发
+- **跨浏览器完美兼容**：Chrome/Edge/Firefox均能稳定保持换行格式
+- **全平台统一体验**：ChatGPT、Claude、其他平台换行处理完全一致
+
+### v7.9
+- **智能文本标准化**：发现Claude会添加额外空格，使用标准化文本匹配
+- **Chrome内核优化**：针对Chrome/Edge的文本格式化差异进行适配
+- **调试信息完善**：详细的文本差异对比便于问题定位
+
+### v7.8
+- **文本差异调试版本**：添加完整的文本内容对比分析
+- **精确问题定位**：通过控制台日志精确发现Claude文本修改行为
+
+### v7.7
+- **调试条件判断**：修复保护条件逻辑，添加详细的条件检查日志
+- **问题诊断增强**：通过完整的条件状态输出定位触发失败原因
+
+### v7.6
+- **修复Claude ProseMirror段落包装问题**：解决Claude将内容自动包装成`<p>`标签导致换行消失
+- **智能段落和换行处理**：区分双换行（段落）和单换行（br标签）
+- **ProseMirror兼容性优化**：使用`<p>` + `<br>`组合符合ProseMirror的HTML结构期望
+- **增强保护触发条件**：检测`<p>`标签包装和缺少`<br>`标签两种情况
+
+### v7.5  
+- **修复ChatGPT ProseMirror支持**：发现ChatGPT现在使用contenteditable ProseMirror编辑器
+- **统一ProseMirror处理**：ChatGPT和Claude都使用相同的ProseMirror换行保护逻辑
+- **增强调试信息**：添加详细的保护过程日志，便于问题诊断
+- **跨平台兼容性**：确保Chrome内核下的换行保护机制正确触发
+
+### v7.4
+- **详细调试版本**：添加完整的保护过程日志输出
+- **问题诊断优化**：通过控制台日志精确定位换行清理时机
+- **保护机制监控**：实时显示内容变化和保护触发情况
+
+### v7.3
+- **解决Chrome内核换行被清理问题**：修复Chrome/Edge下换行内容瞬间消失的问题
+- **智能内容保护机制**：持续监控并阻止前端框架清理换行格式
+- **Chrome专门优化**：针对Chrome内核的DOM处理差异进行特殊优化
+- **双重保护策略**：填入内容后持续2秒监控，确保换行格式不被意外清除
+
+### v7.2
+- **Chrome内核增强处理**：为Chrome/Edge浏览器添加专门的换行处理逻辑
+- **模拟真实用户操作**：通过粘贴事件和逐字符输入模拟真实用户行为
+- **跨浏览器兼容性**：区分Firefox和Chrome内核，使用不同的处理策略
+- **强化事件触发**：增强input事件序列，确保框架正确响应
+
+### v7.1
+- **修复Claude和OpenAI换行问题**：专门解决Claude和ChatGPT输入时丢失换行格式的问题
+- **Claude ProseMirror支持**：为Claude的contenteditable编辑器实现正确的HTML换行结构
+- **OpenAI textarea优化**：确保ChatGPT的textarea正确保持换行并触发高度调整
+- **精准修复策略**：只修复Claude和OpenAI，不影响其他已正常工作的平台
+
+### v7.0  
+- **大幅增强调试功能**：为Google AI Studio添加详细的元素查找和调试日志
+- **扩展AI Studio选择器**：支持更多可能的输入元素选择器
+- **智能回退查找**：当主选择器失败时，自动尝试多种备用查找策略
+- **可见性和可编辑性检查**：确保找到的元素真正可用于输入
+
+### v6.9
 - **修复Google AI Studio输入问题**：基于丰富的修复经验，为AI Studio添加专门处理
 - **Angular框架支持**：针对AI Studio的Angular + Material Design架构优化
 - **增强contenteditable处理**：改进对contenteditable元素的内容设置逻辑
@@ -226,5 +301,5 @@ const siteConfigs = {
 ---
 
 **作者**: Sauterne
-**版本**: 6.9
+**版本**: 1.0
 **更新时间**: 2025年
