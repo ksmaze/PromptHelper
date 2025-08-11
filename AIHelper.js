@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         通用 AI Prompt 助手 (双语版)
 // @namespace    http://tampermonkey.net/
-// @version      1.0
+// @version      6.1
 // @description  一个脚本通用 ChatGPT, Gemini, Claude, Kimi, DeepSeek, 腾讯元宝, Google AI Studio 等多个 AI 平台。提供可收缩的侧边栏，用于管理 Prompt 模板，并能一键复制或提交。
 // @author       Sauterne
 // @match        https://chat.openai.com/*
@@ -49,7 +49,10 @@
             'claude.ai': { name: 'Claude', inputSelector: '.ProseMirror[contenteditable="true"]' },
             'fuclaude.com': { name: 'Claude', inputSelector: '.ProseMirror[contenteditable="true"]' },
             'kimi.moonshot.cn': { name: 'Kimi', inputSelector: 'div.chat-input-editor[data-lexical-editor="true"]' },
-            'deepseek.com': { name: 'DeepSeek', inputSelector: '#chat-input' },
+            'deepseek.com': { 
+                name: 'DeepSeek', 
+                inputSelector: 'textarea[placeholder*="随便聊点什么"], textarea[placeholder*="Ask me anything"], div[contenteditable="true"], #chat-input, [role="textbox"]'
+            },
             'tongyi.com': { name: '通义', inputSelector: 'textarea[placeholder*="有问题，随时问通义"]' },
             'yuanbao.tencent.com': { name: '腾讯元宝', inputSelector: 'textarea[placeholder*="输入问题"]' },
             'aistudio.google.com': {
@@ -94,7 +97,18 @@
 
         function injectStyles() {
             GM_addStyle(`
-                #prompt-helper-container *, #prompt-helper-container *::before, #prompt-helper-container *::after { box-sizing: border-box !important; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif !important; margin: 0 !important; padding: 0 !important; }
+                /* 增强的样式隔离，防止第三方CSS干扰 */
+                #prompt-helper-container { all: initial !important; }
+                #prompt-helper-container *, #prompt-helper-container *::before, #prompt-helper-container *::after { 
+                    all: unset !important; 
+                    box-sizing: border-box !important; 
+                    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif !important; 
+                    margin: 0 !important; 
+                    padding: 0 !important; 
+                    text-decoration: none !important;
+                    border: none !important;
+                    outline: none !important;
+                }
                 #prompt-helper-container { position: fixed !important; top: 100px !important; right: 0 !important; z-index: 99999 !important; font-size: 16px !important; color: #333 !important; line-height: 1.5 !important; }
                 #prompt-helper-toggle { width: 40px !important; height: 100px !important; background-color: #007bff !important; color: white !important; border: none !important; border-radius: 10px 0 0 10px !important; cursor: pointer !important; writing-mode: vertical-rl !important; text-orientation: mixed !important; display: flex !important; align-items: center !important; justify-content: center !important; font-size: 16px !important; box-shadow: -2px 2px 5px rgba(0,0,0,0.2) !important; }
                 #prompt-helper-content { position: absolute !important; top: 0 !important; right: 40px !important; width: 400px !important; background-color: #f8f9fa !important; border: 1px solid #dee2e6 !important; border-radius: 8px !important; box-shadow: -2px 2px 10px rgba(0,0,0,0.1) !important; padding: 15px !important; display: flex !important; flex-direction: column !important; gap: 15px !important; transition: transform 0.3s ease-in-out, opacity 0.3s ease-in-out !important; color: #333 !important; text-align: left !important; }
@@ -164,21 +178,85 @@
         function findInputElement() {
             const siteConfig = getCurrentSiteConfig();
             if (!siteConfig) return null;
+            
+            // 增强的输入元素查找逻辑
+            let inputElement = null;
+            
+            // 1. 先尝试 Shadow DOM 查找
             if (siteConfig.shadowRootSelector) {
                 const host = document.querySelector(siteConfig.shadowRootSelector);
                 if (host && host.shadowRoot) {
                     const elementInShadow = host.shadowRoot.querySelector(siteConfig.inputSelector);
-                    if (elementInShadow) return elementInShadow;
+                    if (elementInShadow) inputElement = elementInShadow;
                 }
             }
-            return document.querySelector(siteConfig.inputSelector);
+            
+            // 2. 如果没有找到，尝试正常 DOM 查找
+            if (!inputElement) {
+                // 尝试选择器中的每个部分
+                const selectors = siteConfig.inputSelector.split(',').map(s => s.trim());
+                for (const selector of selectors) {
+                    inputElement = document.querySelector(selector);
+                    if (inputElement) break;
+                }
+            }
+            
+            // 3. 对于 DeepSeek，提供额外的回退查找逻辑
+            if (!inputElement && window.location.hostname.includes('deepseek.com')) {
+                // 更广泛的查找策略
+                const fallbackSelectors = [
+                    'textarea',
+                    '[contenteditable="true"]',
+                    '[role="textbox"]',
+                    'input[type="text"]',
+                    '.chat-input',
+                    '[data-placeholder]',
+                    '[aria-label*="输入"]',
+                    '[aria-label*="input"]',
+                    '[placeholder*="聊"]',
+                    '[placeholder*="chat"]'
+                ];
+                
+                for (const selector of fallbackSelectors) {
+                    const elements = document.querySelectorAll(selector);
+                    for (const element of elements) {
+                        // 检查元素是否可见且可编辑
+                        const style = window.getComputedStyle(element);
+                        if (style.display !== 'none' && 
+                            style.visibility !== 'hidden' && 
+                            !element.disabled && 
+                            !element.readOnly) {
+                            inputElement = element;
+                            break;
+                        }
+                    }
+                    if (inputElement) break;
+                }
+            }
+            
+            return inputElement;
         }
 
         function init() {
             if (document.getElementById('prompt-helper-container')) return;
+            
+            // 防止多次初始化和第三方脚本干扰
+            if (window.promptHelperInitialized) return;
+            window.promptHelperInitialized = true;
+            
             injectStyles();
             const { container, elements: D } = buildUI();
+            
+            // 使用更安全的方式添加到 DOM
+            const addToDOM = () => {
+                if (document.body) {
             document.body.appendChild(container);
+                } else {
+                    // 如果 body 还不存在，等待一下
+                    setTimeout(addToDOM, 100);
+                }
+            };
+            addToDOM();
 
             let prompts = {};
 
@@ -275,9 +353,59 @@
                 if (!finalPrompt) return;
                 const inputElement = findInputElement();
                 if (inputElement) {
+                    // 调试信息：在控制台记录找到的输入元素
+                    console.log('[Prompt Helper] 找到输入元素:', {
+                        tagName: inputElement.tagName,
+                        className: inputElement.className,
+                        id: inputElement.id,
+                        placeholder: inputElement.placeholder,
+                        contentEditable: inputElement.contentEditable,
+                        type: inputElement.type,
+                        element: inputElement
+                    });
+                    
+                    // 增强的输入处理逻辑，支持多种类型的输入框
                     if (inputElement.tagName.toLowerCase() === 'textarea') {
+                        // 标准 textarea 处理
                         inputElement.value = finalPrompt;
+                        
+                        // 特殊处理：DeepSeek 的 textarea + div 架构
+                        if (window.location.hostname.includes('deepseek.com')) {
+                            // 查找相邻的显示元素
+                            const parentDiv = inputElement.parentElement;
+                            if (parentDiv) {
+                                // 查找显示内容的 div（基于实际的HTML结构）
+                                let displayDiv = parentDiv.querySelector('.b13855df');
+                                
+                                if (!displayDiv) {
+                                    // 回退方案：查找不是容器的div
+                                    const allDivs = parentDiv.querySelectorAll('div');
+                                    for (const div of allDivs) {
+                                        if (!div.classList.contains('_24fad49') && div !== parentDiv) {
+                                            displayDiv = div;
+                                            break;
+                                        }
+                                    }
+                                }
+                                
+                                if (displayDiv) {
+                                    console.log('[Prompt Helper] 找到DeepSeek显示元素:', displayDiv);
+                                    // 清空并设置新内容
+                                    displayDiv.innerHTML = '';
+                                    const lines = finalPrompt.split('\n');
+                                    lines.forEach((line, index) => {
+                                        if (index > 0) {
+                                            displayDiv.appendChild(document.createElement('br'));
+                                        }
+                                        displayDiv.appendChild(document.createTextNode(line));
+                                    });
+                                } else {
+                                    console.log('[Prompt Helper] 未找到DeepSeek显示元素，尝试直接设置textarea');
+                                }
+                            }
+                        }
                     } else if (inputElement.getAttribute('contenteditable') === 'true') {
+                        // contenteditable 元素处理
                         inputElement.textContent = '';
                         const lines = finalPrompt.split('\n');
                         lines.forEach(line => {
@@ -289,15 +417,195 @@
                             }
                             inputElement.appendChild(p);
                         });
+                    } else {
+                        // 其他类型的输入元素处理（如特殊的 React 组件）
+                        // 尝试多种方法来设置值
+                        if ('value' in inputElement) {
+                            inputElement.value = finalPrompt;
+                        }
+                        if (inputElement.textContent !== undefined) {
+                            inputElement.textContent = finalPrompt;
+                        }
+                        if (inputElement.innerText !== undefined) {
+                            inputElement.innerText = finalPrompt;
+                        }
                     }
-                    inputElement.dispatchEvent(new Event('input', { bubbles: true }));
+                    
+                    // 触发多种事件以确保输入被识别
+                    const events = ['input', 'change', 'keydown', 'keyup', 'paste'];
+                    events.forEach(eventType => {
+                        const event = new Event(eventType, { bubbles: true, cancelable: true });
+                        inputElement.dispatchEvent(event);
+                    });
+                    
+                    // 特殊处理：针对 React 组件的额外事件
+                    const inputEvent = new InputEvent('input', { 
+                        bubbles: true, 
+                        cancelable: true, 
+                        data: finalPrompt,
+                        inputType: 'insertText'
+                    });
+                    inputElement.dispatchEvent(inputEvent);
+                    
+                    // DeepSeek 特殊处理：模拟键盘输入
+                    if (window.location.hostname.includes('deepseek.com')) {
+                        console.log('[Prompt Helper] 应用DeepSeek特殊处理');
+                        
+                        // 模拟键盘事件
+                        const keyEvents = ['keydown', 'keypress', 'keyup'];
+                        keyEvents.forEach(eventType => {
+                            const keyEvent = new KeyboardEvent(eventType, {
+                                bubbles: true,
+                                cancelable: true,
+                                key: 'a',
+                                code: 'KeyA',
+                                which: 65,
+                                keyCode: 65
+                            });
+                            inputElement.dispatchEvent(keyEvent);
+                        });
+                        
+                        // 尝试触发组合事件
+                        inputElement.dispatchEvent(new Event('compositionstart', { bubbles: true }));
+                        inputElement.dispatchEvent(new Event('compositionupdate', { bubbles: true }));
+                        inputElement.dispatchEvent(new Event('compositionend', { bubbles: true }));
+                    }
+                    
+                    // 聚焦和光标定位
                     inputElement.focus();
+                    
+                    // 尝试设置光标位置
+                    if (inputElement.tagName.toLowerCase() === 'textarea' || inputElement.type === 'text') {
+                        inputElement.setSelectionRange(finalPrompt.length, finalPrompt.length);
+                    } else if (inputElement.getAttribute('contenteditable') === 'true') {
                     const range = document.createRange();
                     const sel = window.getSelection();
-                    if (sel) {
-                        range.selectNodeContents(inputElement); range.collapse(false);
-                        sel.removeAllRanges(); sel.addRange(range);
+                        if (sel && inputElement.childNodes.length > 0) {
+                            range.selectNodeContents(inputElement);
+                            range.collapse(false);
+                            sel.removeAllRanges();
+                            sel.addRange(range);
+                        }
                     }
+                    
+                    // 延迟再次触发事件以确保现代框架检测到变化
+                    setTimeout(() => {
+                        inputElement.dispatchEvent(new Event('input', { bubbles: true }));
+                        inputElement.dispatchEvent(new Event('change', { bubbles: true }));
+                        
+                        // DeepSeek 额外处理：仅检查，不重复设置（避免重复）
+                        if (window.location.hostname.includes('deepseek.com')) {
+                            console.log('[Prompt Helper] 延迟检查DeepSeek状态');
+                            const parentDiv = inputElement.parentElement;
+                            if (parentDiv) {
+                                const displayDiv = parentDiv.querySelector('.b13855df, div:not(._24fad49)');
+                                if (displayDiv) {
+                                    console.log('[Prompt Helper] DeepSeek显示元素状态检查完成');
+                                    // 不再在这里设置内容，避免重复
+                                }
+                            }
+                        }
+                    }, 100);
+                    
+                    // 更长延迟的额外同步检查
+                    if (window.location.hostname.includes('deepseek.com')) {
+                        setTimeout(() => {
+                            const parentDiv = inputElement.parentElement;
+                            if (parentDiv) {
+                                const displayDiv = parentDiv.querySelector('.b13855df, div:not(._24fad49)');
+                                if (displayDiv) {
+                                    console.log('[Prompt Helper] 最终强制同步');
+                                    displayDiv.textContent = finalPrompt;
+                                    
+                                    // 额外的视觉刷新方法
+                                    console.log('[Prompt Helper] 触发视觉刷新');
+                                    
+                                    // 方法1：模拟点击来刷新界面
+                                    displayDiv.click();
+                                    
+                                    // 方法2：强制重绘
+                                    displayDiv.style.display = 'none';
+                                    displayDiv.offsetHeight; // 触发重排
+                                    displayDiv.style.display = '';
+                                    
+                                    // 方法3：模拟焦点变化
+                                    inputElement.blur();
+                                    setTimeout(() => {
+                                        inputElement.focus();
+                                        inputElement.setSelectionRange(finalPrompt.length, finalPrompt.length);
+                                    }, 50);
+                                    
+                                    // 方法4：触发resize事件（某些框架监听此事件）
+                                    window.dispatchEvent(new Event('resize'));
+                                    
+                                    // 方法5：完全重新开始的真实输入模拟
+                                    console.log('[Prompt Helper] 开始完全重置并模拟真实输入');
+                                    
+                                    // 完全清理状态
+                                    inputElement.value = '';
+                                    displayDiv.textContent = '';
+                                    displayDiv.innerHTML = '';
+                                    
+                                    // 确保焦点在正确位置
+                                    inputElement.focus();
+                                    
+                                    // 使用更强的方法：直接设置React内部状态
+                                    // 查找React实例
+                                    const reactKey = Object.keys(inputElement).find(key => key.startsWith('__reactInternalInstance') || key.startsWith('__reactFiber'));
+                                    if (reactKey) {
+                                        console.log('[Prompt Helper] 发现React实例，尝试直接更新状态');
+                                        try {
+                                            const fiberNode = inputElement[reactKey];
+                                            if (fiberNode && fiberNode.memoizedProps && fiberNode.memoizedProps.onChange) {
+                                                // 创建模拟的React事件
+                                                const fakeEvent = {
+                                                    target: { value: finalPrompt },
+                                                    currentTarget: { value: finalPrompt },
+                                                    preventDefault: () => {},
+                                                    stopPropagation: () => {}
+                                                };
+                                                fiberNode.memoizedProps.onChange(fakeEvent);
+                                            }
+                                        } catch (e) {
+                                            console.log('[Prompt Helper] React状态更新失败:', e);
+                                        }
+                                    }
+                                    
+                                    // 一次性设置完整内容（移除流式打字效果）
+                                    console.log('[Prompt Helper] 一次性设置完整内容');
+                                    inputElement.value = finalPrompt;
+                                    displayDiv.textContent = finalPrompt;
+                                    
+                                    // 触发关键事件（简化版本，避免重复）
+                                    const events = [
+                                        new InputEvent('beforeinput', { bubbles: true, cancelable: true, data: finalPrompt, inputType: 'insertText' }),
+                                        new InputEvent('input', { bubbles: true, cancelable: true, data: finalPrompt, inputType: 'insertText' }),
+                                        new Event('change', { bubbles: true })
+                                    ];
+                                    
+                                    events.forEach(event => inputElement.dispatchEvent(event));
+                                    console.log('[Prompt Helper] 一次性设置完成');
+                                    
+                                    // 最终确认和清理（移除粘贴方法以避免重复）
+                                    setTimeout(() => {
+                                        console.log('[Prompt Helper] 最终确认内容正确性');
+                                        
+                                        // 确保内容一致性，但不重新设置（避免重复）
+                                        if (inputElement.value !== finalPrompt || displayDiv.textContent !== finalPrompt) {
+                                            console.log('[Prompt Helper] 检测到内容不一致，进行最终同步');
+                                            inputElement.value = finalPrompt;
+                                            displayDiv.textContent = finalPrompt;
+                                            inputElement.dispatchEvent(new Event('input', { bubbles: true }));
+                                        } else {
+                                            console.log('[Prompt Helper] 内容已正确同步');
+                                        }
+                                        
+                                    }, 300); // 缩短延迟时间
+                                }
+                            }
+                        }, 500);
+                    }
+                    
                     D.userQuestionTextarea.value = '';
                     D.contentPanel.classList.add('hidden');
                 } else {
