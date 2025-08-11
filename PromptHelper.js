@@ -2,7 +2,7 @@
 // @name         PromptHelper
 // @namespace    http://tampermonkey.net/
 // @version      1.0
-// @description  PromptHelper：通用于 ChatGPT, Gemini, Claude, Kimi, DeepSeek, 通义、元宝、Google AI Studio 的侧边模板助手。保留 v7.5 稳定行为；对 Claude 采用“粘贴法”保真换行；修复 OpenAI 出现 <<<...>>> 被解析为 <<>> 的问题（仅 OpenAI 上处理）。
+// @description  PromptHelper：通用于 ChatGPT, Gemini, Claude, Kimi, DeepSeek, 通义、元宝、Google AI Studio 的侧边模板助手。
 // @author       Sauterne
 // @match        http://chat.openai.com/*
 // @match        https://chat.openai.com/*
