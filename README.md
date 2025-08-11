@@ -1,6 +1,6 @@
 # 通用 AI Prompt 助手 (双语版)
 
-![版本](https://img.shields.io/badge/版本-6.4-blue)
+![版本](https://img.shields.io/badge/版本-6.5-blue)
 ![许可证](https://img.shields.io/badge/许可证-MIT-green)
 ![Tampermonkey](https://img.shields.io/badge/油猴脚本-支持-orange)
 
@@ -133,7 +133,14 @@ const siteConfigs = {
 
 ## 📝 更新日志
 
-### v6.4 (当前版本)
+### v6.5 (当前版本)
+- **深度修复通义千问React状态问题**：直接操作React内部状态和受控组件
+- **多路径React状态访问**：尝试多种React属性路径找到onChange处理器
+- **强制属性重写**：使用Object.defineProperty强制设置value属性
+- **逐字符输入模拟**：完全模拟用户真实输入过程
+- **延迟确认机制**：添加延迟处理确保React状态更新完成
+
+### v6.4
 - **修复通义千问Ant Design问题**：专门针对通义千问的Ant Design框架优化
 - **双重处理策略**：在textarea和特殊处理两个层面都增加了通义千问支持
 - **模拟真实用户输入**：为Ant Design框架提供完整的事件序列

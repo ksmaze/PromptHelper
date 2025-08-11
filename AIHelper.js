@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         通用 AI Prompt 助手 (双语版)
 // @namespace    http://tampermonkey.net/
-// @version      6.4
+// @version      6.5
 // @description  一个脚本通用 ChatGPT, Gemini, Claude, Kimi, DeepSeek, 腾讯元宝, Google AI Studio 等多个 AI 平台。提供可收缩的侧边栏，用于管理 Prompt 模板，并能一键复制或提交。
 // @author       Sauterne
 // @match        https://chat.openai.com/*
@@ -386,28 +386,89 @@
                     if (inputElement.tagName.toLowerCase() === 'textarea') {
                         // 标准 textarea 处理
                         if (window.location.hostname.includes('tongyi.com')) {
-                            // 通义千问的 Ant Design textarea 需要特殊处理
-                            console.log('[Prompt Helper] 通义千问 textarea 特殊处理');
+                            // 通义千问的 Ant Design + React 受控组件特殊处理
+                            console.log('[Prompt Helper] 通义千问 React+Ant Design 特殊处理');
+                            
+                            // 方法1: 尝试直接操作React内部状态
+                            const reactKey = Object.keys(inputElement).find(key => 
+                                key.startsWith('__reactInternalInstance') || 
+                                key.startsWith('__reactFiber') ||
+                                key.startsWith('__reactProps')
+                            );
+                            
+                            if (reactKey) {
+                                console.log('[Prompt Helper] 发现通义千问React实例');
+                                try {
+                                    const fiberNode = inputElement[reactKey];
+                                    // 尝试多种React属性路径
+                                    const possiblePaths = [
+                                        fiberNode?.memoizedProps?.onChange,
+                                        fiberNode?.return?.memoizedProps?.onChange,
+                                        fiberNode?.return?.return?.memoizedProps?.onChange,
+                                        fiberNode?.pendingProps?.onChange
+                                    ];
+                                    
+                                    for (const onChange of possiblePaths) {
+                                        if (onChange && typeof onChange === 'function') {
+                                            console.log('[Prompt Helper] 找到React onChange处理器');
+                                            const fakeEvent = {
+                                                target: { value: finalPrompt },
+                                                currentTarget: { value: finalPrompt },
+                                                preventDefault: () => {},
+                                                stopPropagation: () => {}
+                                            };
+                                            onChange(fakeEvent);
+                                            break;
+                                        }
+                                    }
+                                } catch (e) {
+                                    console.log('[Prompt Helper] React状态操作失败:', e);
+                                }
+                            }
+                            
+                            // 方法2: 强制设置值并触发完整事件序列
                             inputElement.focus();
                             inputElement.value = '';
                             
-                            // 模拟真实的键盘输入
-                            inputElement.value = finalPrompt;
+                            // 逐字符输入模拟（对于严格的受控组件）
+                            for (let i = 0; i < finalPrompt.length; i++) {
+                                const currentValue = finalPrompt.substring(0, i + 1);
+                                
+                                // 设置属性
+                                inputElement.value = currentValue;
+                                Object.defineProperty(inputElement, 'value', {
+                                    value: currentValue,
+                                    writable: true,
+                                    configurable: true
+                                });
+                                
+                                // 触发输入事件
+                                const inputEvent = new InputEvent('input', {
+                                    bubbles: true,
+                                    cancelable: true,
+                                    data: finalPrompt[i],
+                                    inputType: 'insertText'
+                                });
+                                inputElement.dispatchEvent(inputEvent);
+                            }
                             
-                            // 触发 Ant Design 需要的事件
-                            const antdEvents = [
-                                new Event('focus', { bubbles: true }),
-                                new InputEvent('input', { bubbles: true, cancelable: true, inputType: 'insertText' }),
+                            // 最终事件序列
+                            const finalEvents = [
                                 new Event('change', { bubbles: true }),
-                                new Event('blur', { bubbles: true })
+                                new Event('blur', { bubbles: true }),
+                                new KeyboardEvent('keydown', { bubbles: true, key: 'Enter' }),
+                                new KeyboardEvent('keyup', { bubbles: true, key: 'Enter' })
                             ];
                             
-                            antdEvents.forEach(event => {
-                                inputElement.dispatchEvent(event);
-                            });
+                            finalEvents.forEach(event => inputElement.dispatchEvent(event));
                             
-                            // 重新聚焦
-                            setTimeout(() => inputElement.focus(), 100);
+                            // 延迟聚焦和最终确认
+                            setTimeout(() => {
+                                inputElement.focus();
+                                inputElement.value = finalPrompt;
+                                inputElement.dispatchEvent(new Event('input', { bubbles: true }));
+                            }, 200);
+                            
                         } else {
                             inputElement.value = finalPrompt;
                         }
