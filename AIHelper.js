@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         通用 AI Prompt 助手 (双语版)
 // @namespace    http://tampermonkey.net/
-// @version      6.1
+// @version      6.4
 // @description  一个脚本通用 ChatGPT, Gemini, Claude, Kimi, DeepSeek, 腾讯元宝, Google AI Studio 等多个 AI 平台。提供可收缩的侧边栏，用于管理 Prompt 模板，并能一键复制或提交。
 // @author       Sauterne
 // @match        https://chat.openai.com/*
@@ -48,13 +48,22 @@
             },
             'claude.ai': { name: 'Claude', inputSelector: '.ProseMirror[contenteditable="true"]' },
             'fuclaude.com': { name: 'Claude', inputSelector: '.ProseMirror[contenteditable="true"]' },
-            'kimi.moonshot.cn': { name: 'Kimi', inputSelector: 'div.chat-input-editor[data-lexical-editor="true"]' },
+            'kimi.moonshot.cn': { 
+                name: 'Kimi', 
+                inputSelector: 'div.chat-input-editor[data-lexical-editor="true"], div[contenteditable="true"], textarea, [role="textbox"], [data-lexical-editor]'
+            },
             'deepseek.com': { 
                 name: 'DeepSeek', 
                 inputSelector: 'textarea[placeholder*="随便聊点什么"], textarea[placeholder*="Ask me anything"], div[contenteditable="true"], #chat-input, [role="textbox"]'
             },
-            'tongyi.com': { name: '通义', inputSelector: 'textarea[placeholder*="有问题，随时问通义"]' },
-            'yuanbao.tencent.com': { name: '腾讯元宝', inputSelector: 'textarea[placeholder*="输入问题"]' },
+            'tongyi.com': { 
+                name: '通义', 
+                inputSelector: 'textarea[placeholder*="有问题，随时问通义"], textarea[placeholder*="问题"], textarea, div[contenteditable="true"], [role="textbox"]'
+            },
+            'yuanbao.tencent.com': { 
+                name: '腾讯元宝', 
+                inputSelector: 'textarea[placeholder*="输入问题"], textarea[placeholder*="问题"], textarea, div[contenteditable="true"], [role="textbox"]'
+            },
             'aistudio.google.com': {
                 name: 'Google AI Studio',
                 shadowRootSelector: 'app-root',
@@ -193,10 +202,17 @@
             
             // 2. 如果没有找到，尝试正常 DOM 查找
             if (!inputElement) {
-                // 尝试选择器中的每个部分
+                // 尝试选择器中的每个部分，排除脚本自己的元素
                 const selectors = siteConfig.inputSelector.split(',').map(s => s.trim());
                 for (const selector of selectors) {
-                    inputElement = document.querySelector(selector);
+                    const elements = document.querySelectorAll(selector);
+                    for (const element of elements) {
+                        // 排除脚本自己的元素
+                        if (!element.closest('#prompt-helper-container')) {
+                            inputElement = element;
+                            break;
+                        }
+                    }
                     if (inputElement) break;
                 }
             }
@@ -220,14 +236,16 @@
                 for (const selector of fallbackSelectors) {
                     const elements = document.querySelectorAll(selector);
                     for (const element of elements) {
-                        // 检查元素是否可见且可编辑
-                        const style = window.getComputedStyle(element);
-                        if (style.display !== 'none' && 
-                            style.visibility !== 'hidden' && 
-                            !element.disabled && 
-                            !element.readOnly) {
-                            inputElement = element;
-                            break;
+                        // 排除脚本自己的元素并检查元素是否可见且可编辑
+                        if (!element.closest('#prompt-helper-container')) {
+                            const style = window.getComputedStyle(element);
+                            if (style.display !== 'none' && 
+                                style.visibility !== 'hidden' && 
+                                !element.disabled && 
+                                !element.readOnly) {
+                                inputElement = element;
+                                break;
+                            }
                         }
                     }
                     if (inputElement) break;
@@ -367,7 +385,32 @@
                     // 增强的输入处理逻辑，支持多种类型的输入框
                     if (inputElement.tagName.toLowerCase() === 'textarea') {
                         // 标准 textarea 处理
-                        inputElement.value = finalPrompt;
+                        if (window.location.hostname.includes('tongyi.com')) {
+                            // 通义千问的 Ant Design textarea 需要特殊处理
+                            console.log('[Prompt Helper] 通义千问 textarea 特殊处理');
+                            inputElement.focus();
+                            inputElement.value = '';
+                            
+                            // 模拟真实的键盘输入
+                            inputElement.value = finalPrompt;
+                            
+                            // 触发 Ant Design 需要的事件
+                            const antdEvents = [
+                                new Event('focus', { bubbles: true }),
+                                new InputEvent('input', { bubbles: true, cancelable: true, inputType: 'insertText' }),
+                                new Event('change', { bubbles: true }),
+                                new Event('blur', { bubbles: true })
+                            ];
+                            
+                            antdEvents.forEach(event => {
+                                inputElement.dispatchEvent(event);
+                            });
+                            
+                            // 重新聚焦
+                            setTimeout(() => inputElement.focus(), 100);
+                        } else {
+                            inputElement.value = finalPrompt;
+                        }
                         
                         // 特殊处理：DeepSeek 的 textarea + div 架构
                         if (window.location.hostname.includes('deepseek.com')) {
@@ -405,18 +448,14 @@
                             }
                         }
                     } else if (inputElement.getAttribute('contenteditable') === 'true') {
-                        // contenteditable 元素处理
-                        inputElement.textContent = '';
-                        const lines = finalPrompt.split('\n');
-                        lines.forEach(line => {
-                            const p = document.createElement('p');
-                            if (line.trim() === '') {
-                                p.appendChild(document.createElement('br'));
-                            } else {
-                                p.textContent = line;
-                            }
-                            inputElement.appendChild(p);
-                        });
+                        // contenteditable 元素处理（简化版本，避免重复）
+                        console.log('[Prompt Helper] contenteditable元素直接设置文本');
+                        inputElement.textContent = finalPrompt;
+                        // 对于特殊网站，跳过后续的复杂处理以避免重复
+                        const skipComplexProcessing = ['kimi.moonshot.cn'].some(site => window.location.hostname.includes(site));
+                        if (skipComplexProcessing) {
+                            console.log('[Prompt Helper] 跳过复杂处理，避免重复');
+                        }
                     } else {
                         // 其他类型的输入元素处理（如特殊的 React 组件）
                         // 尝试多种方法来设置值
@@ -474,9 +513,13 @@
                     // 聚焦和光标定位
                     inputElement.focus();
                     
-                    // 尝试设置光标位置
+                    // 尝试设置光标位置（添加错误处理）
                     if (inputElement.tagName.toLowerCase() === 'textarea' || inputElement.type === 'text') {
-                        inputElement.setSelectionRange(finalPrompt.length, finalPrompt.length);
+                        try {
+                            inputElement.setSelectionRange(finalPrompt.length, finalPrompt.length);
+                        } catch (e) {
+                            console.log('[Prompt Helper] setSelectionRange 不支持此元素类型');
+                        }
                     } else if (inputElement.getAttribute('contenteditable') === 'true') {
                     const range = document.createRange();
                     const sel = window.getSelection();
@@ -493,22 +536,30 @@
                         inputElement.dispatchEvent(new Event('input', { bubbles: true }));
                         inputElement.dispatchEvent(new Event('change', { bubbles: true }));
                         
-                        // DeepSeek 额外处理：仅检查，不重复设置（避免重复）
-                        if (window.location.hostname.includes('deepseek.com')) {
-                            console.log('[Prompt Helper] 延迟检查DeepSeek状态');
-                            const parentDiv = inputElement.parentElement;
-                            if (parentDiv) {
-                                const displayDiv = parentDiv.querySelector('.b13855df, div:not(._24fad49)');
-                                if (displayDiv) {
-                                    console.log('[Prompt Helper] DeepSeek显示元素状态检查完成');
-                                    // 不再在这里设置内容，避免重复
-                                }
-                            }
-                        }
+                                            // 特殊网站的延迟检查（不设置内容，避免重复）
+                    const specialSites = ['deepseek.com', 'kimi.moonshot.cn', 'tongyi.com', 'yuanbao.tencent.com'];
+                    const currentSiteCheck = specialSites.find(site => window.location.hostname.includes(site));
+                    
+                    if (currentSiteCheck) {
+                        console.log(`[Prompt Helper] 延迟检查${currentSiteCheck}状态`);
+                        // 仅检查状态，不重复设置内容
+                    }
                     }, 100);
                     
-                    // 更长延迟的额外同步检查
-                    if (window.location.hostname.includes('deepseek.com')) {
+                    // 更长延迟的额外同步检查 - 支持多个网站
+                    const specialSites = ['deepseek.com', 'kimi.moonshot.cn', 'tongyi.com', 'yuanbao.tencent.com'];
+                    const currentSite = specialSites.find(site => window.location.hostname.includes(site));
+                    
+                    if (currentSite) {
+                        // 检查是否已经进行了简单处理，避免Kimi重复填入
+                        const skipComplexProcessing = currentSite === 'kimi.moonshot.cn' 
+                            && inputElement.getAttribute('contenteditable') === 'true';
+                        
+                        if (skipComplexProcessing) {
+                            console.log(`[Prompt Helper] ${currentSite}已完成简单处理，跳过复杂处理避免重复`);
+                            return;
+                        }
+                        
                         setTimeout(() => {
                             const parentDiv = inputElement.parentElement;
                             if (parentDiv) {
@@ -532,32 +583,38 @@
                                     inputElement.blur();
                                     setTimeout(() => {
                                         inputElement.focus();
-                                        inputElement.setSelectionRange(finalPrompt.length, finalPrompt.length);
+                                        try {
+                                            if (inputElement.tagName.toLowerCase() === 'textarea' || inputElement.type === 'text') {
+                                                inputElement.setSelectionRange(finalPrompt.length, finalPrompt.length);
+                                            }
+                                        } catch (e) {
+                                            console.log('[Prompt Helper] setSelectionRange 不支持此元素类型');
+                                        }
                                     }, 50);
                                     
                                     // 方法4：触发resize事件（某些框架监听此事件）
                                     window.dispatchEvent(new Event('resize'));
                                     
-                                    // 方法5：完全重新开始的真实输入模拟
-                                    console.log('[Prompt Helper] 开始完全重置并模拟真实输入');
+                                    // 方法5：多网站统一的真实输入模拟
+                                    console.log(`[Prompt Helper] 开始${currentSite}完全重置并模拟真实输入`);
                                     
                                     // 完全清理状态
                                     inputElement.value = '';
-                                    displayDiv.textContent = '';
-                                    displayDiv.innerHTML = '';
+                                    if (displayDiv) {
+                                        displayDiv.textContent = '';
+                                        displayDiv.innerHTML = '';
+                                    }
                                     
                                     // 确保焦点在正确位置
                                     inputElement.focus();
                                     
                                     // 使用更强的方法：直接设置React内部状态
-                                    // 查找React实例
                                     const reactKey = Object.keys(inputElement).find(key => key.startsWith('__reactInternalInstance') || key.startsWith('__reactFiber'));
                                     if (reactKey) {
-                                        console.log('[Prompt Helper] 发现React实例，尝试直接更新状态');
+                                        console.log(`[Prompt Helper] 发现${currentSite}React实例，尝试直接更新状态`);
                                         try {
                                             const fiberNode = inputElement[reactKey];
                                             if (fiberNode && fiberNode.memoizedProps && fiberNode.memoizedProps.onChange) {
-                                                // 创建模拟的React事件
                                                 const fakeEvent = {
                                                     target: { value: finalPrompt },
                                                     currentTarget: { value: finalPrompt },
@@ -567,40 +624,96 @@
                                                 fiberNode.memoizedProps.onChange(fakeEvent);
                                             }
                                         } catch (e) {
-                                            console.log('[Prompt Helper] React状态更新失败:', e);
+                                            console.log(`[Prompt Helper] ${currentSite}React状态更新失败:`, e);
                                         }
                                     }
                                     
-                                    // 一次性设置完整内容（移除流式打字效果）
-                                    console.log('[Prompt Helper] 一次性设置完整内容');
-                                    inputElement.value = finalPrompt;
-                                    displayDiv.textContent = finalPrompt;
-                                    
-                                    // 触发关键事件（简化版本，避免重复）
-                                    const events = [
-                                        new InputEvent('beforeinput', { bubbles: true, cancelable: true, data: finalPrompt, inputType: 'insertText' }),
-                                        new InputEvent('input', { bubbles: true, cancelable: true, data: finalPrompt, inputType: 'insertText' }),
-                                        new Event('change', { bubbles: true })
-                                    ];
-                                    
-                                    events.forEach(event => inputElement.dispatchEvent(event));
-                                    console.log('[Prompt Helper] 一次性设置完成');
-                                    
-                                    // 最终确认和清理（移除粘贴方法以避免重复）
-                                    setTimeout(() => {
-                                        console.log('[Prompt Helper] 最终确认内容正确性');
+                                    // 针对不同网站的特殊处理
+                                    if (currentSite === 'kimi.moonshot.cn') {
+                                        // Kimi 特殊处理：可能使用Lexical编辑器
+                                        console.log('[Prompt Helper] 应用Kimi Lexical编辑器处理');
+                                        if (inputElement.getAttribute('data-lexical-editor')) {
+                                            // 尝试设置多种属性
+                                            if (inputElement.textContent !== undefined) {
+                                                inputElement.textContent = finalPrompt;
+                                            }
+                                            if (inputElement.innerText !== undefined) {
+                                                inputElement.innerText = finalPrompt;
+                                            }
+                                        }
+                                    } else if (currentSite === 'tongyi.com') {
+                                        // 通义千问特殊处理 - Ant Design框架
+                                        console.log('[Prompt Helper] 应用通义千问 Ant Design 特殊处理');
                                         
-                                        // 确保内容一致性，但不重新设置（避免重复）
-                                        if (inputElement.value !== finalPrompt || displayDiv.textContent !== finalPrompt) {
-                                            console.log('[Prompt Helper] 检测到内容不一致，进行最终同步');
-                                            inputElement.value = finalPrompt;
-                                            displayDiv.textContent = finalPrompt;
-                                            inputElement.dispatchEvent(new Event('input', { bubbles: true }));
-                                        } else {
-                                            console.log('[Prompt Helper] 内容已正确同步');
+                                        // 方法1: 模拟完整的用户输入序列
+                                        inputElement.focus();
+                                        inputElement.value = '';
+                                        
+                                        // 模拟用户逐字符输入（Ant Design 通常监听这种方式）
+                                        const inputText = finalPrompt;
+                                        for (let i = 0; i < inputText.length; i++) {
+                                            const char = inputText[i];
+                                            inputElement.value += char;
+                                            
+                                            // 触发每个字符的事件
+                                            const events = [
+                                                new KeyboardEvent('keydown', { bubbles: true, cancelable: true, key: char }),
+                                                new InputEvent('input', { bubbles: true, cancelable: true, data: char, inputType: 'insertText' }),
+                                                new KeyboardEvent('keyup', { bubbles: true, cancelable: true, key: char })
+                                            ];
+                                            events.forEach(event => inputElement.dispatchEvent(event));
                                         }
                                         
-                                    }, 300); // 缩短延迟时间
+                                        // 最终事件
+                                        inputElement.dispatchEvent(new Event('change', { bubbles: true }));
+                                        inputElement.dispatchEvent(new Event('blur', { bubbles: true }));
+                                        setTimeout(() => inputElement.focus(), 50);
+                                        
+                                    } else if (currentSite === 'yuanbao.tencent.com') {
+                                        // 腾讯元宝特殊处理
+                                        console.log('[Prompt Helper] 应用腾讯元宝特殊处理');
+                                        inputElement.setAttribute('value', finalPrompt);
+                                    }
+                                    
+                                    // 一次性设置完整内容（通义千问跳过，已经在上面处理）
+                                    if (currentSite !== 'tongyi.com') {
+                                        console.log(`[Prompt Helper] ${currentSite}一次性设置完整内容`);
+                                        inputElement.value = finalPrompt;
+                                        if (displayDiv) {
+                                            displayDiv.textContent = finalPrompt;
+                                        }
+                                    }
+                                    
+                                    // 触发关键事件（通义千问跳过，已经在上面处理）
+                                    if (currentSite !== 'tongyi.com') {
+                                        const events = [
+                                            new InputEvent('beforeinput', { bubbles: true, cancelable: true, data: finalPrompt, inputType: 'insertText' }),
+                                            new InputEvent('input', { bubbles: true, cancelable: true, data: finalPrompt, inputType: 'insertText' }),
+                                            new Event('change', { bubbles: true })
+                                        ];
+                                        
+                                        events.forEach(event => inputElement.dispatchEvent(event));
+                                        console.log(`[Prompt Helper] ${currentSite}一次性设置完成`);
+                                    } else {
+                                        console.log('[Prompt Helper] 通义千问特殊处理完成');
+                                    }
+                                    
+                                    // 最终确认和清理
+                                    setTimeout(() => {
+                                        console.log(`[Prompt Helper] ${currentSite}最终确认内容正确性`);
+                                        
+                                        if (inputElement.value !== finalPrompt) {
+                                            console.log(`[Prompt Helper] ${currentSite}进行最终同步`);
+                                            inputElement.value = finalPrompt;
+                                            if (displayDiv && displayDiv.textContent !== finalPrompt) {
+                                                displayDiv.textContent = finalPrompt;
+                                            }
+                                            inputElement.dispatchEvent(new Event('input', { bubbles: true }));
+                                        } else {
+                                            console.log(`[Prompt Helper] ${currentSite}内容已正确同步`);
+                                        }
+                                        
+                                    }, 300);
                                 }
                             }
                         }, 500);
