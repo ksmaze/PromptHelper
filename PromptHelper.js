@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         PromptHelper
 // @namespace    http://tampermonkey.net/
-// @version      1.5.0
-// @description  PromptHelper：通用于 ChatGPT, Gemini, Claude, Kimi, DeepSeek, 通义、元宝、Google AI Studio、Grok、豆包 的侧边模板助手（默认仅保留“通用交互式提问模板”；稳健事件触发；横向按钮与可调高度；支持模板导入/导出）。
+// @version      1.5.1
+// @description  PromptHelper：通用于 ChatGPT, Gemini, Claude, Kimi, DeepSeek, 通义、元宝、Google AI Studio、Grok、豆包 的侧边模板助手（默认仅保留“通用交互式提问模板”；稳健事件触发；横向按钮与可调高度；支持模板导入/导出）。本版将导入/导出与基础设置迁移到“设置页”，主页面仅保留基础功能。
 // @author       Sauterne
 // @match        http://chat.openai.com/*
 // @match        https://chat.openai.com/*
@@ -286,9 +286,21 @@ USER QUESTION (paste multi-paragraph content between the markers):
                 #prompt-helper-container .ph-btn-success { background-color: #28a745 !important; } #prompt-helper-container .ph-btn-success:hover { background-color: #218838 !important; }
                 #prompt-helper-container .ph-btn-danger { background-color: #dc3545 !important; } #prompt-helper-container .ph-btn-danger:hover { background-color: #c82333 !important; }
                 #prompt-helper-container button:focus-visible, #prompt-helper-container select:focus-visible, #prompt-helper-container input:focus-visible, #prompt-helper-container textarea:focus-visible { outline: 2px solid #0056b3 !important; outline-offset: 2px !important; }
+
+                /* 头部区域：新增右上角设置按钮容器 */
                 #prompt-helper-container .ph-header { display: flex !important; justify-content: space-between !important; align-items: center !important; margin-bottom: 10px !important; padding: 0 !important; }
+                #prompt-helper-container .ph-header-right { display: flex !important; align-items: center !important; gap: 8px !important; }
+
                 #prompt-helper-container #ph-collapse-btn { font-size: 24px !important; cursor: pointer !important; color: #6c757d !important; border: none !important; background: none !important; padding: 0 5px !important; line-height: 1 !important; }
                 #prompt-helper-container #ph-lang-toggle { font-size: 12px !important; color: #007bff !important; background: none !important; border: 1px solid #007bff !important; padding: 2px 6px !important; border-radius: 4px !important; cursor: pointer !important; }
+
+                /* 设置按钮（右上角） */
+                #prompt-helper-container #ph-settings-btn { font-size: 12px !important; color: #6c757d !important; background: #fff !important; border: 1px solid #ced4da !important; padding: 2px 8px !important; border-radius: 4px !important; cursor: pointer !important; }
+                #prompt-helper-container #ph-settings-btn:hover { background: #f1f3f5 !important; }
+
+                /* 视图切换：主视图 / 设置视图 */
+                #prompt-helper-content .ph-hide { display: none !important; }
+
                 #prompt-helper-content .ph-grid { display: grid !important; grid-template-columns: 1fr 1fr !important; gap: 8px 10px !important; }
                 @media (max-width: 480px) { #prompt-helper-content .ph-grid { grid-template-columns: 1fr !important; } }
             `);
@@ -314,11 +326,16 @@ USER QUESTION (paste multi-paragraph content between the markers):
 
             D.toggleButton=create('button','prompt-helper-toggle');
             D.contentPanel=create('div','prompt-helper-content',['hidden']);
+
+            // 头部：左-语言切换，中-标题，右-（设置、收起）
             D.langToggleButton=create('button','ph-lang-toggle',[],{},[document.createTextNode('中/En')]);
             D.title=create('h3','ph-title');
-            D.collapseButton=create('button','ph-collapse-btn');
-            const header=create('div','ph-header',['ph-header'],{},[D.langToggleButton,D.title,D.collapseButton]);
+            D.settingsButton=create('button','ph-settings-btn',[],{id:'ph-settings-btn',title:''},[document.createTextNode('⚙️')]);
+            D.collapseButton=create('button','ph-collapse-btn',[],{id:'ph-collapse-btn'},[document.createTextNode('\u00d7')]);
+            const rightBox=create('div',null,['ph-header-right'],{},[D.settingsButton,D.collapseButton]);
+            const header=create('div','ph-header',['ph-header'],{},[D.langToggleButton,D.title,rightBox]);
 
+            // === 主视图（仅保留基础功能） ===
             // 模板选择区
             D.labelSelect=create('label','ph-label-select',[],{for:'ph-template-select'});
             D.templateSelect=create('select','ph-template-select');
@@ -328,15 +345,6 @@ USER QUESTION (paste multi-paragraph content between the markers):
             const section1=create('div',null,['ph-section'],{},[
                 D.labelSelect,D.templateSelect,
                 create('div',null,['ph-button-group'],{},[D.newBtn,D.saveBtn,D.deleteBtn])
-            ]);
-
-            // 导入/导出区
-            D.importBtn=create('button','ph-import-btn',['ph-btn-secondary']);
-            D.exportBtn=create('button','ph-export-btn',['ph-btn-secondary']);
-            D.importFileInput=create('input','ph-import-file',[],{type:'file',accept:'.json,application/json',style:'display:none'});
-            const sectionIO=create('div',null,['ph-section'],{},[
-                create('div',null,['ph-button-group'],{},[D.importBtn,D.exportBtn]),
-                D.importFileInput
             ]);
 
             // 模板编辑区
@@ -362,6 +370,19 @@ USER QUESTION (paste multi-paragraph content between the markers):
                 create('div',null,['ph-button-group'],{},[D.copyBtn,D.submitBtn])
             ]);
 
+            // 主视图容器
+            D.mainView = create('div','ph-main-view',[],{},[section1,section2,section3,section4]);
+
+            // === 设置视图（导入/导出 + 基础设置） ===
+            // 导入/导出区（从主视图移到此处）
+            D.importBtn=create('button','ph-import-btn',['ph-btn-secondary']);
+            D.exportBtn=create('button','ph-export-btn',['ph-btn-secondary']);
+            D.importFileInput=create('input','ph-import-file',[],{type:'file',accept:'.json,application/json',style:'display:none'});
+            const sectionIO=create('div',null,['ph-section'],{},[
+                create('div',null,['ph-button-group'],{},[D.importBtn,D.exportBtn]),
+                D.importFileInput
+            ]);
+
             // 基础设置区
             D.settingsTitleEl = document.createElement('h4');
             D.settingsTitleEl.id='ph-settings-title';
@@ -385,11 +406,18 @@ USER QUESTION (paste multi-paragraph content between the markers):
             ]);
             const settingsButtons = create('div',null,['ph-button-group'],{},[D.settingsSaveBtn, D.settingsResetBtn]);
 
-            const sectionSettings = create('div',null,['ph-section'],{},[
-                D.settingsTitleEl, settingsGrid, settingsButtons
+            // 返回按钮（设置页左上角）
+            D.backBtn = create('button','ph-back-btn',['ph-btn-secondary'],{},[document.createTextNode('←')]);
+
+            // 设置视图容器（默认隐藏）
+            D.settingsView = create('div','ph-settings-view',['ph-hide'],{},[
+                D.backBtn,
+                D.settingsTitleEl, settingsGrid, settingsButtons,
+                sectionIO
             ]);
 
-            D.contentPanel.append(header,section1,sectionIO,section2,section3,section4,sectionSettings);
+            // 组装
+            D.contentPanel.append(header, D.mainView, D.settingsView);
             container.append(D.toggleButton,D.contentPanel);
             return {container,elements:D};
         }
@@ -589,26 +617,41 @@ USER QUESTION (paste multi-paragraph content between the markers):
                 for(const k of Object.keys(obj)){ if(legacyNames.has(obj[k]?.name)) delete obj[k]; }
             }
 
+            // 视图切换
+            function showMain(){ D.mainView.classList.remove('ph-hide'); D.settingsView.classList.add('ph-hide'); }
+            function showSettings(){ D.settingsView.classList.remove('ph-hide'); D.mainView.classList.add('ph-hide'); }
+
             const updateUI=()=>{
                 const t=translations[currentLang];
                 D.toggleButton.textContent=t.toggleButton; D.title.textContent=t.panelTitle;
-                D.collapseButton.title=t.collapseTitle; D.collapseButton.textContent='\u00d7';
+                D.collapseButton.title=t.collapseTitle;
+                D.settingsButton.title = t.settingsTitle; // 设置按钮的气泡提示
+
+                // 主视图文本
                 D.labelSelect.textContent=t.selectTemplate; D.newBtn.textContent=t.newBtn;
                 D.saveBtn.textContent=t.saveBtn; D.deleteBtn.textContent=t.deleteBtn;
-                D.importBtn.textContent=t.importBtn; D.exportBtn.textContent=t.exportBtn;
                 D.labelName.textContent=t.templateName; D.templateNameInput.placeholder=t.templateNamePlaceholder;
                 D.labelContent.textContent=t.templateContent; D.labelQuestion.textContent=t.yourQuestion;
                 D.userQuestionTextarea.placeholder=t.yourQuestionPlaceholder;
                 D.copyBtn.textContent=t.copyBtn; D.submitBtn.textContent=t.submitBtn;
+
+                // 设置页文本
                 D.settingsTitleEl.textContent = t.settingsTitle;
                 D.settingTopLabel.textContent = t.settingTop;
                 D.settingToggleWidthLabel.textContent = t.settingToggleWidth;
                 D.settingToggleHeightLabel.textContent = t.settingToggleHeight;
                 D.settingsSaveBtn.textContent = t.settingsSave;
                 D.settingsResetBtn.textContent = t.settingsReset;
+
+                // 导入导出按钮文本（现在位于设置页）
+                D.importBtn.textContent=t.importBtn; D.exportBtn.textContent=t.exportBtn;
+
+                // 同步数值
                 D.settingTopInput.value = uiSettings.top;
                 D.settingToggleWidthInput.value = uiSettings.toggleWidth;
                 D.settingToggleHeightInput.value = uiSettings.toggleHeight;
+
+                // 刷新下拉
                 populateDropdown();
                 if(prompts[DEFAULT_TEMPLATE_ID]) D.templateSelect.value=DEFAULT_TEMPLATE_ID;
                 displaySelectedPrompt();
@@ -635,12 +678,19 @@ USER QUESTION (paste multi-paragraph content between the markers):
                 if(prompts[DEFAULT_TEMPLATE_ID]){ D.templateSelect.value=DEFAULT_TEMPLATE_ID; displaySelectedPrompt(); }
             };
 
-            // 交互绑定
+            // 交互绑定：打开/收起
             D.toggleButton.addEventListener('click',()=>D.contentPanel.classList.remove('hidden'));
             D.collapseButton.addEventListener('click',()=>D.contentPanel.classList.add('hidden'));
-            D.langToggleButton.addEventListener('click',()=>{ currentLang=currentLang==='zh'?'en':'zh'; GM_setValue(LANG_STORE_KEY,currentLang); updateUI(); });
-            D.templateSelect.addEventListener('change',displaySelectedPrompt);
 
+            // 语言切换（同时刷新两页的文案）
+            D.langToggleButton.addEventListener('click',()=>{ currentLang=currentLang==='zh'?'en':'zh'; GM_setValue(LANG_STORE_KEY,currentLang); updateUI(); });
+
+            // 视图切换：设置按钮 / 返回按钮
+            D.settingsButton.addEventListener('click', showSettings);
+            D.backBtn.addEventListener('click', showMain);
+
+            // 主视图：模板选择/编辑
+            D.templateSelect.addEventListener('change',displaySelectedPrompt);
             D.newBtn.addEventListener('click',()=>{ D.templateSelect.value=''; D.templateNameInput.value=''; D.templateBodyTextarea.value=''; D.templateNameInput.focus(); D.deleteBtn.disabled=true; });
             D.saveBtn.addEventListener('click',()=>{
                 const name=D.templateNameInput.value.trim();
@@ -663,6 +713,7 @@ USER QUESTION (paste multi-paragraph content between the markers):
                 }
             });
 
+            // 主视图：复制
             D.copyBtn.addEventListener('click',()=>{
                 const finalPrompt=generateFinalPrompt(); if(finalPrompt){
                     navigator.clipboard.writeText(finalPrompt).then(()=>{
@@ -672,7 +723,7 @@ USER QUESTION (paste multi-paragraph content between the markers):
                 }
             });
 
-            // 设置保存/重置
+            // 设置页：保存/重置
             D.settingsSaveBtn.addEventListener('click', ()=>{
                 const top = Math.max(0, parseInt(D.settingTopInput.value||DEFAULT_UI.top,10));
                 const tw = Math.max(40, parseInt(D.settingToggleWidthInput.value||DEFAULT_UI.toggleWidth,10));
@@ -690,7 +741,7 @@ USER QUESTION (paste multi-paragraph content between the markers):
                 applyUISettings(document.getElementById('prompt-helper-container'));
             });
 
-            // 导出
+            // 设置页：导出
             D.exportBtn.addEventListener('click',()=>{
                 const list=[];
                 for(const id in prompts){
@@ -706,7 +757,7 @@ USER QUESTION (paste multi-paragraph content between the markers):
                 alert(translations[currentLang].alertExportDone + filename);
             });
 
-            // 导入
+            // 设置页：导入
             D.importBtn.addEventListener('click',()=> D.importFileInput.click());
             D.importFileInput.addEventListener('change',(evt)=>{
                 const file=evt.target.files && evt.target.files[0];
@@ -744,7 +795,7 @@ USER QUESTION (paste multi-paragraph content between the markers):
                 reader.readAsText(file,'utf-8');
             });
 
-            // 提交到站点输入框
+            // 提交到站点输入框（原逻辑保持不变）
             D.submitBtn.addEventListener('click',()=>{
                 const finalPrompt=generateFinalPrompt(); if(!finalPrompt) return;
                 const inputElement=findInputElement(); if(!inputElement){ alert(translations[currentLang].alertSubmitError); return; }
@@ -934,9 +985,13 @@ USER QUESTION (paste multi-paragraph content between the markers):
                     }
                 }
 
-                D.userQuestionTextarea.value=''; D.contentPanel.classList.add('hidden');
+                D.userQuestionTextarea.value='';
+                // 提交后自动收起面板
+                D.contentPanel.classList.add('hidden');
             });
 
+            // 初始：默认展示主视图
+            showMain();
             loadPrompts();
         }
 
