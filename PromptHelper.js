@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         PromptHelper
 // @namespace    http://tampermonkey.net/
-// @version      1.0
-// @description  PromptHelper：通用于 ChatGPT, Gemini, Claude, Kimi, DeepSeek, 通义、元宝、Google AI Studio 的侧边模板助手。
+// @version      1.1
+// @description  PromptHelper：通用于 ChatGPT, Gemini, Claude, Kimi, DeepSeek, 通义、元宝、Google AI Studio、Grok 的侧边模板助手。
 // @author       Sauterne
 // @match        http://chat.openai.com/*
 // @match        https://chat.openai.com/*
@@ -28,6 +28,10 @@
 // @match        https://yuanbao.tencent.com/chat/*
 // @match        http://aistudio.google.com/*
 // @match        https://aistudio.google.com/*
+// @match        http://grok.com/*
+// @match        https://grok.com/*
+// @match        http://www.grok.com/*
+// @match        https://www.grok.com/*
 // @grant        GM_setValue
 // @grant        GM_getValue
 // @grant        GM_addStyle
@@ -92,7 +96,16 @@
             }
         }
     }
-    // === 仅上面三函数是新增；其余保持 v7.5 原样 ===
+
+    // === 新增：使用原生 setter，确保受控组件能感知 value 变化 ===
+    const nativeTextareaValueSetter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')?.set;
+    const nativeInputValueSetter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
+    function setNativeValue(el, value) {
+        const setter = el.tagName === 'TEXTAREA' ? nativeTextareaValueSetter :
+                       el.tagName === 'INPUT' ? nativeInputValueSetter : null;
+        if (setter) setter.call(el, value);
+        else el.value = value;
+    }
 
     // --- 脚本主体逻辑 ---
     window.addEventListener('DOMContentLoaded', () => {
@@ -133,6 +146,11 @@
                 name: 'Google AI Studio',
                 shadowRootSelector: 'app-root',
                 inputSelector: '[contenteditable="true"], textarea, [role="textbox"], [aria-label*="prompt"], [aria-label*="Prompt"], [placeholder*="prompt"], [placeholder*="Prompt"], .prompt-input, #prompt-input, input[type="text"]'
+            },
+            'grok.com': {
+                name: 'Grok',
+                // 页面结构：form.query-bar 下有一个 textarea，带 aria-label（“向 Grok 提任何问题”）
+                inputSelector: 'form .query-bar textarea[aria-label], textarea[aria-label*="Grok"], textarea[aria-label*="向 Grok"], textarea'
             }
         };
 
@@ -201,7 +219,7 @@
                 #prompt-helper-container .ph-btn-primary { background-color: #007bff !important; } #prompt-helper-container .ph-btn-primary:hover { background-color: #0056b3 !important; }
                 #prompt-helper-container .ph-btn-secondary { background-color: #6c757d !important; } #prompt-helper-container .ph-btn-secondary:hover { background-color: #5a6268 !important; }
                 #prompt-helper-container .ph-btn-success { background-color: #28a745 !important; } #prompt-helper-container .ph-btn-success:hover { background-color: #218838 !important; }
-                #prompt-helper-container .ph-btn-danger { background-color: #dc3545 !important; } #prompt-helper-container .ph-btn-danger:hover { background-color: #c82333 !important; }
+                #prompt-helper-container .ph-btn-danger { background颜色: #dc3545 !important; } #prompt-helper-container .ph-btn-danger:hover { background-color: #c82333 !important; }
                 #prompt-helper-container .ph-header { display: flex !important; justify-content: space-between !important; align-items: center !important; margin-bottom: 10px !important; padding: 0 !important; }
                 #prompt-helper-container #ph-collapse-btn { font-size: 24px !important; cursor: pointer !important; color: #6c757d !important; border: none !important; background: none !important; padding: 0 5px !important; line-height: 1 !important; }
                 #prompt-helper-container #ph-lang-toggle { font-size: 12px !important; color: #007bff !important; background: none !important; border: 1px solid #007bff !important; padding: 2px 6px !important; border-radius: 4px !important; cursor: pointer !important; }
@@ -319,6 +337,28 @@
                             if (style.display !== 'none' && style.visibility !== 'hidden' && !element.disabled && !element.readOnly) {
                                 inputElement = element; break;
                             }
+                        }
+                    }
+                    if (inputElement) break;
+                }
+            }
+
+            // 5. Grok 回退
+            if (!inputElement && window.location.hostname.includes('grok.com')) {
+                const grokSelectors = [
+                    'form .query-bar textarea[aria-label]',
+                    'textarea[aria-label*="Grok"]',
+                    'textarea[aria-label*="向 Grok"]',
+                    'textarea'
+                ];
+                for (const selector of grokSelectors) {
+                    const elements = document.querySelectorAll(selector);
+                    for (const el of elements) {
+                        if (!el.closest('#prompt-helper-container')) {
+                            const st = window.getComputedStyle(el);
+                            const visible = st.display !== 'none' && st.visibility !== 'hidden' && st.opacity !== '0';
+                            const editable = !el.disabled && !el.readOnly;
+                            if (visible && editable) { inputElement = el; break; }
                         }
                     }
                     if (inputElement) break;
@@ -543,6 +583,55 @@
                                     window.dispatchEvent(new Event('resize'));
                                 }, 50);
                             }, 150);
+
+                        } else if (window.location.hostname.includes('grok.com')) {
+                            // —— Grok：原生 setter + 真实输入事件序列，确保解锁提交按钮
+                            inputElement.focus();
+
+                            // 清空 -> input 重置
+                            setNativeValue(inputElement, '');
+                            inputElement.dispatchEvent(new Event('input', { bubbles: true }));
+
+                            // 写入最终文本（原生 setter）
+                            setNativeValue(inputElement, finalPrompt);
+                            inputElement.setAttribute('value', finalPrompt); // 兼容部分实现
+
+                            // 模拟“粘贴 + 输入”
+                            try {
+                                inputElement.dispatchEvent(new InputEvent('beforeinput', {
+                                    bubbles: true,
+                                    cancelable: true,
+                                    inputType: 'insertFromPaste',
+                                    data: finalPrompt
+                                }));
+                            } catch (_) {}
+                            inputElement.dispatchEvent(new Event('input', { bubbles: true }));
+                            inputElement.dispatchEvent(new InputEvent('input', {
+                                bubbles: true,
+                                cancelable: true,
+                                inputType: 'insertText',
+                                data: finalPrompt
+                            }));
+                            inputElement.dispatchEvent(new Event('change', { bubbles: true }));
+
+                            // 轻触发键盘事件（有站点会监听 key）
+                            ['keydown', 'keypress', 'keyup'].forEach(type => {
+                                inputElement.dispatchEvent(new KeyboardEvent(type, {
+                                    bubbles: true,
+                                    cancelable: true,
+                                    key: 'a',
+                                    code: 'KeyA'
+                                }));
+                            });
+
+                            // 光标置末尾
+                            try { inputElement.setSelectionRange(finalPrompt.length, finalPrompt.length); } catch (_) {}
+
+                            // 下一帧再触发一次，确保按钮刷新
+                            setTimeout(() => {
+                                inputElement.dispatchEvent(new Event('input', { bubbles: true }));
+                                inputElement.dispatchEvent(new Event('change', { bubbles: true }));
+                            }, 50);
 
                         } else {
                             // —— OpenAI ChatGPT：保留 v7.5 的“换行保护”逻辑
