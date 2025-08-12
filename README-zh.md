@@ -19,6 +19,7 @@
 - **通义千问** (tongyi.com)
 - **腾讯元宝** (yuanbao.tencent.com)
 - **Google AI Studio** (aistudio.google.com)
+- **豆包** (doubao.com)
 
 ### 🎛️ 核心功能
 - **模板管理**：创建、编辑、删除和保存 Prompt 模板

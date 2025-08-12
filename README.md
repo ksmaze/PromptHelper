@@ -19,6 +19,7 @@ A powerful universal userscript that provides unified Prompt template management
 - **Tongyi Qianwen** (tongyi.com)
 - **Tencent Yuanbao** (yuanbao.tencent.com)
 - **Google AI Studio** (aistudio.google.com)
+- **Doubao** (doubao.com)
 
 ### 🎛️ Core Functionality
 - **Template Management**: Create, edit, delete, and save Prompt templates

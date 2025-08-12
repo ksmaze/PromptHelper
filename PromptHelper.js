@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         PromptHelper
 // @namespace    http://tampermonkey.net/
-// @version      1.4.0
-// @description  PromptHelper：通用于 ChatGPT, Gemini, Claude, Kimi, DeepSeek, 通义、元宝、Google AI Studio、Grok 的侧边模板助手（仅保留默认“通用交互式提问模板”，默认选中；更稳事件触发；支持横向按钮与可调高度等基础设置）。
+// @version      1.4.1
+// @description  PromptHelper：通用于 ChatGPT, Gemini, Claude, Kimi, DeepSeek, 通义、元宝、Google AI Studio、Grok、豆包 的侧边模板助手（仅保留默认“通用交互式提问模板”，默认选中；更稳事件触发；支持横向按钮与可调高度等基础设置）。
 // @author       Sauterne
 // @match        http://chat.openai.com/*
 // @match        https://chat.openai.com/*
@@ -32,6 +32,10 @@
 // @match        https://grok.com/*
 // @match        http://www.grok.com/*
 // @match        https://www.grok.com/*
+// @match        http://doubao.com/*
+// @match        https://doubao.com/*
+// @match        http://www.doubao.com/*
+// @match        https://www.doubao.com/*
 // @grant        GM_setValue
 // @grant        GM_getValue
 // @grant        GM_addStyle
@@ -93,7 +97,8 @@
             'tongyi.com': { name: '通义', inputSelector: 'textarea[placeholder*="有问题，随时问通义"], textarea[placeholder*="问题"], textarea, div[contenteditable="true"], [role="textbox"]' },
             'yuanbao.tencent.com': { name: '腾讯元宝', inputSelector: 'textarea[placeholder*="输入问题"], textarea[placeholder*="问题"], textarea, div[contenteditable="true"], [role="textbox"]' },
             'aistudio.google.com': { name: 'Google AI Studio', shadowRootSelector: 'app-root', inputSelector: '[contenteditable="true"], textarea, [role="textbox"], [aria-label*="prompt"], [aria-label*="Prompt"], [placeholder*="prompt"], [placeholder*="Prompt"], .prompt-input, #prompt-input, input[type="text"]' },
-            'grok.com': { name: 'Grok', inputSelector: 'form .query-bar textarea[aria-label], textarea[aria-label*="Grok"], textarea[aria-label*="向 Grok"], textarea' }
+            'grok.com': { name: 'Grok', inputSelector: 'form .query-bar textarea[aria-label], textarea[aria-label*="Grok"], textarea[aria-label*="向 Grok"], textarea' },
+            'doubao.com': { name: '豆包', inputSelector: 'textarea[placeholder*="输入"], textarea[placeholder*="问题"], textarea, div[contenteditable="true"], [role="textbox"], [aria-label*="输入"], [aria-label*="提问"], [data-lexical-editor], .ProseMirror' }
         };
 
         const DEFAULT_TEMPLATE_ID='default_interactive';
@@ -445,6 +450,34 @@ USER QUESTION (paste multi-paragraph content between the markers):
                     if(inputElement) break;
                 }
             }
+            // 新增：豆包（doubao.com）回退选择器
+            if(!inputElement&&window.location.hostname.includes('doubao.com')){
+                const doubaoSelectors=[
+                    'textarea[placeholder*="输入"]',
+                    'textarea[placeholder*="问题"]',
+                    'textarea',
+                    '[contenteditable="true"]',
+                    '[role="textbox"]',
+                    '[aria-label*="输入"]',
+                    '[aria-label*="提问"]',
+                    '[data-lexical-editor]',
+                    '.ProseMirror',
+                    '.chat-input textarea',
+                    '.editor-input'
+                ];
+                for(const selector of doubaoSelectors){
+                    const elements=document.querySelectorAll(selector);
+                    for(const el of elements){
+                        if(!el.closest('#prompt-helper-container')){
+                            const st=window.getComputedStyle(el);
+                            const visible=st.display!=='none'&&st.visibility!=='hidden'&&st.opacity!=='0';
+                            const editable=!el.disabled&&!el.readOnly&&(el.contentEditable==='true'||['TEXTAREA','INPUT','DIV'].includes(el.tagName));
+                            if(visible&&editable){ inputElement=el; break; }
+                        }
+                    }
+                    if(inputElement) break;
+                }
+            }
             if(inputElement){
                 console.log('[PromptHelper] 成功找到输入元素:',{ tagName:inputElement.tagName,className:inputElement.className,id:inputElement.id,placeholder:inputElement.placeholder,contentEditable:inputElement.contentEditable,element:inputElement});
             } else {
@@ -562,9 +595,9 @@ USER QUESTION (paste multi-paragraph content between the markers):
 
                 inputElement.focus(); if(inputElement.tagName.toLowerCase()==='textarea'||inputElement.type==='text'){ try{ inputElement.setSelectionRange(finalPrompt.length,finalPrompt.length);}catch(_){}} else if(inputElement.getAttribute('contenteditable')==='true'){ const range=document.createRange(); const sel=window.getSelection(); if(sel&&inputElement.childNodes.length>0){ range.selectNodeContents(inputElement); range.collapse(false); sel.removeAllRanges(); sel.addRange(range);} }
 
-                setTimeout(()=>{ inputElement.dispatchEvent(new Event('input',{bubbles:true})); inputElement.dispatchEvent(new Event('change',{bubbles:true})); const specialSites=['deepseek.com','kimi.moonshot.cn','kimi.com','www.kimi.com','tongyi.com','yuanbao.tencent.com']; const currentSiteCheck=specialSites.find(site=>window.location.hostname.includes(site)); if(currentSiteCheck) console.log(`[PromptHelper] 延迟检查 ${currentSiteCheck} 状态`); },100);
+                setTimeout(()=>{ inputElement.dispatchEvent(new Event('input',{bubbles:true})); inputElement.dispatchEvent(new Event('change',{bubbles:true})); const specialSites=['deepseek.com','kimi.moonshot.cn','kimi.com','www.kimi.com','tongyi.com','yuanbao.tencent.com','doubao.com']; const currentSiteCheck=specialSites.find(site=>window.location.hostname.includes(site)); if(currentSiteCheck) console.log(`[PromptHelper] 延迟检查 ${currentSiteCheck} 状态`); },100);
 
-                const specialSites=['deepseek.com','kimi.moonshot.cn','kimi.com','www.kimi.com','tongyi.com','yuanbao.tencent.com','aistudio.google.com']; const currentSite=specialSites.find(site=>window.location.hostname.includes(site)); if(currentSite){ const skipComplexProcessing=(currentSite==='kimi.moonshot.cn'||currentSite==='kimi.com'||currentSite==='www.kimi.com')&&inputElement.getAttribute('contenteditable')==='true'; if(!skipComplexProcessing){ setTimeout(()=>{ const parentDiv=inputElement.parentElement; if(parentDiv){ inputElement.blur(); setTimeout(()=>{ inputElement.focus(); try{ if(inputElement.tagName.toLowerCase()==='textarea'||inputElement.type==='text') inputElement.setSelectionRange(finalPrompt.length,finalPrompt.length);}catch(_){} },50); window.dispatchEvent(new Event('resize')); const reactKey=Object.keys(inputElement).find(key=>key.startsWith('__reactInternalInstance')||key.startsWith('__reactFiber')); if(reactKey){ try{ const fiberNode=inputElement[reactKey]; if(fiberNode&&fiberNode.memoizedProps&&typeof fiberNode.memoizedProps.onChange==='function'){ const fakeEvent={target:{value:finalPrompt},currentTarget:{value:finalPrompt},preventDefault:()=>{},stopPropagation:()=>{}}; fiberNode.memoizedProps.onChange(fakeEvent); } }catch(e){ console.log(`[PromptHelper] ${currentSite} React状态更新失败:`,e);} } if(currentSite==='tongyi.com'){ inputElement.focus(); inputElement.value=''; const txt=finalPrompt; for(let i=0;i<txt.length;i++){ const ch=txt[i]; inputElement.value+=ch; [ tryCreateKeyboardEvent('keydown',{bubbles:true,cancelable:true,key:ch}), tryCreateInputEvent('input',{bubbles:true,cancelable:true,data:ch,inputType:'insertText'}), tryCreateKeyboardEvent('keyup',{bubbles:true,cancelable:true,key:ch}) ].forEach(ev=>inputElement.dispatchEvent(ev)); } inputElement.dispatchEvent(new Event('change',{bubbles:true})); inputElement.dispatchEvent(new Event('blur',{bubbles:true})); setTimeout(()=>inputElement.focus(),50);
+                const specialSites=['deepseek.com','kimi.moonshot.cn','kimi.com','www.kimi.com','tongyi.com','yuanbao.tencent.com','aistudio.google.com','doubao.com']; const currentSite=specialSites.find(site=>window.location.hostname.includes(site)); if(currentSite){ const skipComplexProcessing=(currentSite==='kimi.moonshot.cn'||currentSite==='kimi.com'||currentSite==='www.kimi.com')&&inputElement.getAttribute('contenteditable')==='true'; if(!skipComplexProcessing){ setTimeout(()=>{ const parentDiv=inputElement.parentElement; if(parentDiv){ inputElement.blur(); setTimeout(()=>{ inputElement.focus(); try{ if(inputElement.tagName.toLowerCase()==='textarea'||inputElement.type==='text') inputElement.setSelectionRange(finalPrompt.length,finalPrompt.length);}catch(_){} },50); window.dispatchEvent(new Event('resize')); const reactKey=Object.keys(inputElement).find(key=>key.startsWith('__reactInternalInstance')||key.startsWith('__reactFiber')); if(reactKey){ try{ const fiberNode=inputElement[reactKey]; if(fiberNode&&fiberNode.memoizedProps&&typeof fiberNode.memoizedProps.onChange==='function'){ const fakeEvent={target:{value:finalPrompt},currentTarget:{value:finalPrompt},preventDefault:()=>{},stopPropagation:()=>{}}; fiberNode.memoizedProps.onChange(fakeEvent); } }catch(e){ console.log(`[PromptHelper] ${currentSite} React状态更新失败:`,e);} } if(currentSite==='tongyi.com'){ inputElement.focus(); inputElement.value=''; const txt=finalPrompt; for(let i=0;i<txt.length;i++){ const ch=txt[i]; inputElement.value+=ch; [ tryCreateKeyboardEvent('keydown',{bubbles:true,cancelable:true,key:ch}), tryCreateInputEvent('input',{bubbles:true,cancelable:true,data:ch,inputType:'insertText'}), tryCreateKeyboardEvent('keyup',{bubbles:true,cancelable:true,key:ch}) ].forEach(ev=>inputElement.dispatchEvent(ev)); } inputElement.dispatchEvent(new Event('change',{bubbles:true})); inputElement.dispatchEvent(new Event('blur',{bubbles:true})); setTimeout(()=>inputElement.focus(),50);
                                 } else if(currentSite==='yuanbao.tencent.com'){ try{ inputElement.setAttribute('value',finalPrompt);}catch(_){} }
                                 else if(currentSite==='aistudio.google.com'){ const angularKey=Object.keys(inputElement).find(key=>key.startsWith('__ngContext')||key.startsWith('__ng')||key.includes('angular')); if(angularKey){ try{ const ngZone=window.ng?.getComponent?.(inputElement); if(ngZone){ ngZone.run(()=>{ inputElement.value=finalPrompt; if(inputElement.textContent!==undefined) inputElement.textContent=finalPrompt; }); } }catch(e){ console.log('[PromptHelper] Angular状态操作失败:',e);} } if(inputElement.getAttribute('contenteditable')==='true'){ inputElement.innerHTML=''; finalPrompt.split('\n').forEach((line,idx)=>{ if(idx>0) inputElement.appendChild(document.createElement('br')); inputElement.appendChild(document.createTextNode(line)); }); } [ new Event('focus',{bubbles:true}), tryCreateInputEvent('input',{bubbles:true,cancelable:true,inputType:'insertText'}), new Event('change',{bubbles:true}), new Event('blur',{bubbles:true}) ].forEach((ev,i)=>setTimeout(()=>inputElement.dispatchEvent(ev),i*20)); }
                             } setTimeout(()=>{ if('value' in inputElement && inputElement.value!==finalPrompt){ inputElement.value=finalPrompt; inputElement.dispatchEvent(new Event('input',{bubbles:true})); } },300); },500); } }
