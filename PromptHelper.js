@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         PromptHelper
 // @namespace    http://tampermonkey.net/
-// @version      1.4.1
-// @description  PromptHelper：通用于 ChatGPT, Gemini, Claude, Kimi, DeepSeek, 通义、元宝、Google AI Studio、Grok、豆包 的侧边模板助手（仅保留默认“通用交互式提问模板”，默认选中；更稳事件触发；支持横向按钮与可调高度等基础设置）。
+// @version      1.5.0
+// @description  PromptHelper：通用于 ChatGPT, Gemini, Claude, Kimi, DeepSeek, 通义、元宝、Google AI Studio、Grok、豆包 的侧边模板助手（默认仅保留“通用交互式提问模板”；稳健事件触发；横向按钮与可调高度；支持模板导入/导出）。
 // @author       Sauterne
 // @match        http://chat.openai.com/*
 // @match        https://chat.openai.com/*
@@ -50,11 +50,12 @@
 
     const SETTINGS = { forceOpenShadow: true };
     const UI_STORE_KEY = 'universal_prompt_helper_ui_settings';
-    const DEFAULT_UI = {
-        top: 100,         // 容器距离顶部（px）
-        toggleWidth: 120, // Helper 按钮宽度（横向按钮）
-        toggleHeight: 40  // Helper 按钮高度（可调，解决遮挡）
-    };
+    const PROMPTS_STORE_KEY = 'universal_prompt_helper_prompts';
+    const LANG_STORE_KEY = 'universal_prompt_helper_lang';
+    const DEFAULT_UI = { top: 100, toggleWidth: 120, toggleHeight: 40 };
+    const DEFAULT_TEMPLATE_ID = 'default_interactive';
+    const EXPORT_SCHEMA = 'prompthelper.templates.v1';
+    const IMPORT_SUFFIX_BASE = ' (imported)';
 
     function loadUISettings(){
         try{
@@ -65,7 +66,7 @@
     }
     function saveUISettings(s){ GM_setValue(UI_STORE_KEY, JSON.stringify(s)); }
 
-    // 强制 open shadow（保持原逻辑）
+    // 强制 open shadow
     const originalAttachShadow = Element.prototype.attachShadow;
     Element.prototype.attachShadow = function(options) {
         if (SETTINGS.forceOpenShadow && options && options.mode === 'closed') options.mode = 'open';
@@ -101,7 +102,6 @@
             'doubao.com': { name: '豆包', inputSelector: 'textarea[placeholder*="输入"], textarea[placeholder*="问题"], textarea, div[contenteditable="true"], [role="textbox"], [aria-label*="输入"], [aria-label*="提问"], [data-lexical-editor], .ProseMirror' }
         };
 
-        const DEFAULT_TEMPLATE_ID='default_interactive';
         const defaultPrompts={
             [DEFAULT_TEMPLATE_ID]:{
                 name:"通用交互式提问模板",
@@ -165,7 +165,7 @@ USER QUESTION (paste multi-paragraph content between the markers):
             }
         };
 
-        // 语言 + 新增设置的多语言
+        // 语言 + 新增设置/导入导出 多语言
         const translations={
             zh:{
                 toggleButton:"Helper",panelTitle:"PromptHelper",collapseTitle:"收起",
@@ -179,12 +179,17 @@ USER QUESTION (paste multi-paragraph content between the markers):
                 alertDeleteConfirm:"确定要删除模板", alertDeleteError:"请先选择一个要删除的模板！",
                 alertCopyError:"复制失败，请查看控制台。", alertSubmitError:"未找到当前网站的输入框。",
                 alertTemplateError:"请先选择或创建一个模板！", alertCannotDeleteDefault:"默认模板不可删除。",
-                // 新增：设置
                 settingsTitle:"基础设置",
                 settingTop:"容器顶部偏移（px）",
                 settingToggleWidth:"Helper 按钮宽度（px）",
                 settingToggleHeight:"Helper 按钮高度（px）",
-                settingsSave:"保存设置", settingsReset:"恢复默认"
+                settingsSave:"保存设置", settingsReset:"恢复默认",
+                // 导入导出
+                importBtn:"导入模板", exportBtn:"导出模板",
+                alertExportEmpty:"没有可导出的模板（默认模板不导出）。",
+                alertExportDone:"模板已导出为文件：",
+                alertImportInvalid:"导入失败：文件格式无效或为空。",
+                alertImportDone:(added,renamed)=>`成功导入 ${added} 个模板（其中 ${renamed} 个已重命名避免重名）。`
             },
             en:{
                 toggleButton:"Helper",panelTitle:"PromptHelper",collapseTitle:"Collapse",
@@ -198,16 +203,21 @@ USER QUESTION (paste multi-paragraph content between the markers):
                 alertDeleteConfirm:"Are you sure you want to delete the template", alertDeleteError:"Please select a template to delete first!",
                 alertCopyError:"Failed to copy. See console for details.", alertSubmitError:"Could not find the input box for the current site.",
                 alertTemplateError:"Please select or create a template first!", alertCannotDeleteDefault:"The default template cannot be deleted.",
-                // settings
                 settingsTitle:"Basic Settings",
                 settingTop:"Container top offset (px)",
                 settingToggleWidth:"Helper button width (px)",
                 settingToggleHeight:"Helper button height (px)",
-                settingsSave:"Save Settings", settingsReset:"Reset Defaults"
+                settingsSave:"Save Settings", settingsReset:"Reset Defaults",
+                // import/export
+                importBtn:"Import", exportBtn:"Export",
+                alertExportEmpty:"No templates to export (default is excluded).",
+                alertExportDone:"Templates exported as file: ",
+                alertImportInvalid:"Import failed: invalid or empty file.",
+                alertImportDone:(added,renamed)=>`Imported ${added} templates (${renamed} renamed to avoid conflicts).`
             }
         };
 
-        let currentLang=GM_getValue('universal_prompt_helper_lang','zh');
+        let currentLang=GM_getValue(LANG_STORE_KEY,'zh');
         let uiSettings = loadUISettings();
 
         function injectStyles(){
@@ -218,7 +228,6 @@ USER QUESTION (paste multi-paragraph content between the markers):
                     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif !important;
                     margin: 0 !important; padding: 0 !important; text-decoration: none !important; border: none !important; outline: none !important;
                 }
-                /* 使用 CSS 变量，让UI设置可控 */
                 #prompt-helper-container {
                     position: fixed !important;
                     top: var(--ph-top, 100px) !important;
@@ -228,7 +237,6 @@ USER QUESTION (paste multi-paragraph content between the markers):
                     color: #333 !important;
                     line-height: 1.5 !important;
                 }
-                /* 横向按钮（去掉 writing-mode） */
                 #prompt-helper-toggle {
                     width: var(--ph-toggle-width, 120px) !important;
                     height: var(--ph-toggle-height, 40px) !important;
@@ -242,7 +250,7 @@ USER QUESTION (paste multi-paragraph content between the markers):
                 #prompt-helper-content {
                     position: absolute !important;
                     top: 0 !important;
-                    right: var(--ph-toggle-width, 120px) !important; /* 跟随按钮宽度 */
+                    right: var(--ph-toggle-width, 120px) !important;
                     width: 400px !important;
                     background-color: #f8f9fa !important;
                     border: 1px solid #dee2e6 !important;
@@ -255,8 +263,6 @@ USER QUESTION (paste multi-paragraph content between the markers):
                     transition: transform 0.3s ease-in-out, opacity 0.3s ease-in-out !important;
                     color: #333 !important;
                     text-align: left !important;
-
-                    /* 根据顶部偏移动态计算内部可视高度 */
                     max-height: calc(100vh - var(--ph-top, 100px) - 40px) !important;
                     overflow-y: auto !important;
                     overscroll-behavior: contain !important;
@@ -283,14 +289,8 @@ USER QUESTION (paste multi-paragraph content between the markers):
                 #prompt-helper-container .ph-header { display: flex !important; justify-content: space-between !important; align-items: center !important; margin-bottom: 10px !important; padding: 0 !important; }
                 #prompt-helper-container #ph-collapse-btn { font-size: 24px !important; cursor: pointer !important; color: #6c757d !important; border: none !important; background: none !important; padding: 0 5px !important; line-height: 1 !important; }
                 #prompt-helper-container #ph-lang-toggle { font-size: 12px !important; color: #007bff !important; background: none !important; border: 1px solid #007bff !important; padding: 2px 6px !important; border-radius: 4px !important; cursor: pointer !important; }
-
-                /* 设置区的两列布局（小屏自动换行） */
-                #prompt-helper-content .ph-grid {
-                    display: grid !important; grid-template-columns: 1fr 1fr !important; gap: 8px 10px !important;
-                }
-                @media (max-width: 480px) {
-                    #prompt-helper-content .ph-grid { grid-template-columns: 1fr !important; }
-                }
+                #prompt-helper-content .ph-grid { display: grid !important; grid-template-columns: 1fr 1fr !important; gap: 8px 10px !important; }
+                @media (max-width: 480px) { #prompt-helper-content .ph-grid { grid-template-columns: 1fr !important; } }
             `);
         }
 
@@ -317,7 +317,6 @@ USER QUESTION (paste multi-paragraph content between the markers):
             D.langToggleButton=create('button','ph-lang-toggle',[],{},[document.createTextNode('中/En')]);
             D.title=create('h3','ph-title');
             D.collapseButton=create('button','ph-collapse-btn');
-
             const header=create('div','ph-header',['ph-header'],{},[D.langToggleButton,D.title,D.collapseButton]);
 
             // 模板选择区
@@ -329,6 +328,15 @@ USER QUESTION (paste multi-paragraph content between the markers):
             const section1=create('div',null,['ph-section'],{},[
                 D.labelSelect,D.templateSelect,
                 create('div',null,['ph-button-group'],{},[D.newBtn,D.saveBtn,D.deleteBtn])
+            ]);
+
+            // 导入/导出区
+            D.importBtn=create('button','ph-import-btn',['ph-btn-secondary']);
+            D.exportBtn=create('button','ph-export-btn',['ph-btn-secondary']);
+            D.importFileInput=create('input','ph-import-file',[],{type:'file',accept:'.json,application/json',style:'display:none'});
+            const sectionIO=create('div',null,['ph-section'],{},[
+                create('div',null,['ph-button-group'],{},[D.importBtn,D.exportBtn]),
+                D.importFileInput
             ]);
 
             // 模板编辑区
@@ -354,8 +362,9 @@ USER QUESTION (paste multi-paragraph content between the markers):
                 create('div',null,['ph-button-group'],{},[D.copyBtn,D.submitBtn])
             ]);
 
-            // 新增：基础设置区
-            D.settingsTitleEl = create('h4','ph-settings-title',[],{},[document.createTextNode('')]);
+            // 基础设置区
+            D.settingsTitleEl = document.createElement('h4');
+            D.settingsTitleEl.id='ph-settings-title';
 
             D.settingTopLabel = create('label','ph-setting-top-label',[],{for:'ph-setting-top'});
             D.settingTopInput = create('input','ph-setting-top',[],{type:'number', min:'0', step:'1'});
@@ -380,12 +389,49 @@ USER QUESTION (paste multi-paragraph content between the markers):
                 D.settingsTitleEl, settingsGrid, settingsButtons
             ]);
 
-            D.contentPanel.append(header,section1,section2,section3,section4,sectionSettings);
+            D.contentPanel.append(header,section1,sectionIO,section2,section3,section4,sectionSettings);
             container.append(D.toggleButton,D.contentPanel);
             return {container,elements:D};
         }
 
-        function findInputElement(){ /* 与原逻辑一致，略 */ 
+        // ---------- 工具函数：导入/导出 ----------
+        function nowStamp(){
+            const d=new Date(); const p=n=>String(n).padStart(2,'0');
+            return `${d.getFullYear()}${p(d.getMonth()+1)}${p(d.getDate())}_${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}`;
+        }
+        function downloadJSON(filename, obj){
+            const blob=new Blob([JSON.stringify(obj,null,2)],{type:'application/json'});
+            const url=URL.createObjectURL(blob);
+            const a=document.createElement('a');
+            a.href=url; a.download=filename; document.body.appendChild(a); a.click();
+            setTimeout(()=>{URL.revokeObjectURL(url); a.remove();},0);
+        }
+        function ensureUniqueName(baseName, existingSet){
+            if(!existingSet.has(baseName)) return baseName;
+            // 先尝试 baseName + " (imported)"
+            let candidate = `${baseName}${IMPORT_SUFFIX_BASE}`;
+            if(!existingSet.has(candidate)) return candidate;
+            // 继续递增数字
+            let i=2;
+            while(existingSet.has(`${baseName}${IMPORT_SUFFIX_BASE} ${i}`)) i++;
+            return `${baseName}${IMPORT_SUFFIX_BASE} ${i}`;
+        }
+        function genId(){
+            return `prompt_${Date.now()}_${Math.random().toString(36).slice(2,8)}`;
+        }
+        function normalizeImportedList(parsed){
+            if(!parsed) return [];
+            // 兼容三种格式：{templates:[{name,template}]}, 直接数组 [{name,template}], 或 map {id:{name,template}}
+            if(Array.isArray(parsed)) return parsed;
+            if(Array.isArray(parsed.templates)) return parsed.templates;
+            if(typeof parsed==='object'){
+                const vals=Object.values(parsed).filter(v=>v && typeof v==='object' && 'name' in v && 'template' in v);
+                if(vals.length) return vals;
+            }
+            return [];
+        }
+
+        function findInputElement(){
             const siteConfig=getCurrentSiteConfig(); if(!siteConfig){console.log('[PromptHelper] 未找到当前网站配置'); return null;}
             console.log(`[PromptHelper] 正在查找 ${window.location.hostname} 的输入元素...`);
             console.log(`[PromptHelper] 使用选择器: ${siteConfig.inputSelector}`);
@@ -450,7 +496,6 @@ USER QUESTION (paste multi-paragraph content between the markers):
                     if(inputElement) break;
                 }
             }
-            // 新增：豆包（doubao.com）回退选择器
             if(!inputElement&&window.location.hostname.includes('doubao.com')){
                 const doubaoSelectors=[
                     'textarea[placeholder*="输入"]',
@@ -502,62 +547,132 @@ USER QUESTION (paste multi-paragraph content between the markers):
 
             let prompts={};
 
-            const populateDropdown=()=>{ const currentSelection=D.templateSelect.value; D.templateSelect.textContent=''; const defaultOption=document.createElement('option'); defaultOption.value=''; defaultOption.textContent=translations[currentLang].selectDefault; D.templateSelect.appendChild(defaultOption); if(prompts[DEFAULT_TEMPLATE_ID]){ const opt=document.createElement('option'); opt.value=DEFAULT_TEMPLATE_ID; opt.textContent=prompts[DEFAULT_TEMPLATE_ID].name; D.templateSelect.appendChild(opt); } for(const id in prompts){ if(id===DEFAULT_TEMPLATE_ID) continue; const option=document.createElement('option'); option.value=id; option.textContent=prompts[id].name; D.templateSelect.appendChild(option); } if(prompts[currentSelection]) D.templateSelect.value=currentSelection; };
+            const populateDropdown=()=>{
+                const currentSelection=D.templateSelect.value;
+                D.templateSelect.textContent='';
+                const defaultOption=document.createElement('option');
+                defaultOption.value='';
+                defaultOption.textContent=translations[currentLang].selectDefault;
+                D.templateSelect.appendChild(defaultOption);
+                if(prompts[DEFAULT_TEMPLATE_ID]){
+                    const opt=document.createElement('option');
+                    opt.value=DEFAULT_TEMPLATE_ID;
+                    opt.textContent=prompts[DEFAULT_TEMPLATE_ID].name;
+                    D.templateSelect.appendChild(opt);
+                }
+                for(const id in prompts){
+                    if(id===DEFAULT_TEMPLATE_ID) continue;
+                    const option=document.createElement('option');
+                    option.value=id; option.textContent=prompts[id].name;
+                    D.templateSelect.appendChild(option);
+                }
+                if(prompts[currentSelection]) D.templateSelect.value=currentSelection;
+            };
 
-            const displaySelectedPrompt=()=>{ const selectedId=D.templateSelect.value; if(selectedId&&prompts[selectedId]){ D.templateNameInput.value=prompts[selectedId].name; D.templateBodyTextarea.value=prompts[selectedId].template; } else { D.templateNameInput.value=''; D.templateBodyTextarea.value=''; } D.deleteBtn.disabled=(selectedId===DEFAULT_TEMPLATE_ID); };
+            const displaySelectedPrompt=()=>{
+                const selectedId=D.templateSelect.value;
+                if(selectedId&&prompts[selectedId]){
+                    D.templateNameInput.value=prompts[selectedId].name;
+                    D.templateBodyTextarea.value=prompts[selectedId].template;
+                } else {
+                    D.templateNameInput.value=''; D.templateBodyTextarea.value='';
+                }
+                D.deleteBtn.disabled=(selectedId===DEFAULT_TEMPLATE_ID);
+            };
 
-            const savePrompts=()=>GM_setValue('universal_prompt_helper_prompts',JSON.stringify(prompts));
+            const savePrompts=()=>GM_setValue(PROMPTS_STORE_KEY,JSON.stringify(prompts));
 
-            function removeLegacyDefaults(obj){ const legacyIds=['prompt_1','prompt_2','prompt_3']; const legacyNames=new Set(['通用回答模板','代码评审模板','英文润色模板']); legacyIds.forEach(id=>{ if(id in obj) delete obj[id]; }); for(const k of Object.keys(obj)){ if(legacyNames.has(obj[k]?.name)) delete obj[k]; } }
+            function removeLegacyDefaults(obj){
+                const legacyIds=['prompt_1','prompt_2','prompt_3'];
+                const legacyNames=new Set(['通用回答模板','代码评审模板','英文润色模板']);
+                legacyIds.forEach(id=>{ if(id in obj) delete obj[id]; });
+                for(const k of Object.keys(obj)){ if(legacyNames.has(obj[k]?.name)) delete obj[k]; }
+            }
 
             const updateUI=()=>{
                 const t=translations[currentLang];
-                // 标题与按钮
                 D.toggleButton.textContent=t.toggleButton; D.title.textContent=t.panelTitle;
                 D.collapseButton.title=t.collapseTitle; D.collapseButton.textContent='\u00d7';
-                // 模板区
                 D.labelSelect.textContent=t.selectTemplate; D.newBtn.textContent=t.newBtn;
                 D.saveBtn.textContent=t.saveBtn; D.deleteBtn.textContent=t.deleteBtn;
+                D.importBtn.textContent=t.importBtn; D.exportBtn.textContent=t.exportBtn;
                 D.labelName.textContent=t.templateName; D.templateNameInput.placeholder=t.templateNamePlaceholder;
                 D.labelContent.textContent=t.templateContent; D.labelQuestion.textContent=t.yourQuestion;
                 D.userQuestionTextarea.placeholder=t.yourQuestionPlaceholder;
                 D.copyBtn.textContent=t.copyBtn; D.submitBtn.textContent=t.submitBtn;
-
-                // 设置区标签与按钮
                 D.settingsTitleEl.textContent = t.settingsTitle;
                 D.settingTopLabel.textContent = t.settingTop;
                 D.settingToggleWidthLabel.textContent = t.settingToggleWidth;
                 D.settingToggleHeightLabel.textContent = t.settingToggleHeight;
                 D.settingsSaveBtn.textContent = t.settingsSave;
                 D.settingsResetBtn.textContent = t.settingsReset;
-
-                // 设置区数值填充
                 D.settingTopInput.value = uiSettings.top;
                 D.settingToggleWidthInput.value = uiSettings.toggleWidth;
                 D.settingToggleHeightInput.value = uiSettings.toggleHeight;
-
-                // 下拉
                 populateDropdown();
                 if(prompts[DEFAULT_TEMPLATE_ID]) D.templateSelect.value=DEFAULT_TEMPLATE_ID;
                 displaySelectedPrompt();
             };
 
-            const generateFinalPrompt=()=>{ const template=D.templateBodyTextarea.value; const question=D.userQuestionTextarea.value; if(!template){ alert(translations[currentLang].alertTemplateError); return null;} return template.replace('{User Question}',question); };
+            const generateFinalPrompt=()=>{
+                const template=D.templateBodyTextarea.value;
+                const question=D.userQuestionTextarea.value;
+                if(!template){ alert(translations[currentLang].alertTemplateError); return null;}
+                return template.replace('{User Question}',question);
+            };
 
-            const loadPrompts=()=>{ const saved=GM_getValue('universal_prompt_helper_prompts',null); if(saved){ try{ prompts=JSON.parse(saved)||{}; }catch{ prompts={}; } removeLegacyDefaults(prompts); if(!prompts[DEFAULT_TEMPLATE_ID]){ prompts[DEFAULT_TEMPLATE_ID]=defaultPrompts[DEFAULT_TEMPLATE_ID]; } savePrompts(); } else { prompts={...defaultPrompts}; savePrompts(); } updateUI(); if(prompts[DEFAULT_TEMPLATE_ID]){ D.templateSelect.value=DEFAULT_TEMPLATE_ID; displaySelectedPrompt(); } };
+            const loadPrompts=()=>{
+                const saved=GM_getValue(PROMPTS_STORE_KEY,null);
+                if(saved){
+                    try{ prompts=JSON.parse(saved)||{}; }catch{ prompts={}; }
+                    removeLegacyDefaults(prompts);
+                    if(!prompts[DEFAULT_TEMPLATE_ID]){ prompts[DEFAULT_TEMPLATE_ID]=defaultPrompts[DEFAULT_TEMPLATE_ID]; }
+                    savePrompts();
+                } else {
+                    prompts={...defaultPrompts}; savePrompts();
+                }
+                updateUI();
+                if(prompts[DEFAULT_TEMPLATE_ID]){ D.templateSelect.value=DEFAULT_TEMPLATE_ID; displaySelectedPrompt(); }
+            };
 
             // 交互绑定
             D.toggleButton.addEventListener('click',()=>D.contentPanel.classList.remove('hidden'));
             D.collapseButton.addEventListener('click',()=>D.contentPanel.classList.add('hidden'));
-            D.langToggleButton.addEventListener('click',()=>{ currentLang=currentLang==='zh'?'en':'zh'; GM_setValue('universal_prompt_helper_lang',currentLang); updateUI(); });
+            D.langToggleButton.addEventListener('click',()=>{ currentLang=currentLang==='zh'?'en':'zh'; GM_setValue(LANG_STORE_KEY,currentLang); updateUI(); });
             D.templateSelect.addEventListener('change',displaySelectedPrompt);
 
             D.newBtn.addEventListener('click',()=>{ D.templateSelect.value=''; D.templateNameInput.value=''; D.templateBodyTextarea.value=''; D.templateNameInput.focus(); D.deleteBtn.disabled=true; });
-            D.saveBtn.addEventListener('click',()=>{ const name=D.templateNameInput.value.trim(); const template=D.templateBodyTextarea.value.trim(); if(!name||!template){ alert(translations[currentLang].alertSaveError); return; } let selectedId=D.templateSelect.value||`prompt_${Date.now()}`; prompts[selectedId]={name,template}; savePrompts(); populateDropdown(); D.templateSelect.value=selectedId; displaySelectedPrompt(); alert(`${translations[currentLang].alertSaveSuccess} "${name}"`); });
-            D.deleteBtn.addEventListener('click',()=>{ const selectedId=D.templateSelect.value; if(!selectedId){ alert(translations[currentLang].alertDeleteError); return; } if(selectedId===DEFAULT_TEMPLATE_ID){ alert(translations[currentLang].alertCannotDeleteDefault); return; } if(confirm(`${translations[currentLang].alertDeleteConfirm} "${prompts[selectedId].name}"?`)){ delete prompts[selectedId]; savePrompts(); populateDropdown(); if(prompts[DEFAULT_TEMPLATE_ID]) D.templateSelect.value=DEFAULT_TEMPLATE_ID; displaySelectedPrompt(); } });
-            D.copyBtn.addEventListener('click',()=>{ const finalPrompt=generateFinalPrompt(); if(finalPrompt){ navigator.clipboard.writeText(finalPrompt).then(()=>{ const originalText=D.copyBtn.textContent; D.copyBtn.textContent=translations[currentLang].copiedBtn; D.copyBtn.disabled=true; setTimeout(()=>{ D.copyBtn.textContent=originalText; D.copyBtn.disabled=false; },2000); }).catch(err=>{ console.error('Copy failed:',err); alert(translations[currentLang].alertCopyError); }); } });
+            D.saveBtn.addEventListener('click',()=>{
+                const name=D.templateNameInput.value.trim();
+                const template=D.templateBodyTextarea.value.trim();
+                if(!name||!template){ alert(translations[currentLang].alertSaveError); return; }
+                let selectedId=D.templateSelect.value||`prompt_${Date.now()}`;
+                prompts[selectedId]={name,template};
+                savePrompts(); populateDropdown();
+                D.templateSelect.value=selectedId; displaySelectedPrompt();
+                alert(`${translations[currentLang].alertSaveSuccess} "${name}"`);
+            });
+            D.deleteBtn.addEventListener('click',()=>{
+                const selectedId=D.templateSelect.value;
+                if(!selectedId){ alert(translations[currentLang].alertDeleteError); return; }
+                if(selectedId===DEFAULT_TEMPLATE_ID){ alert(translations[currentLang].alertCannotDeleteDefault); return; }
+                if(confirm(`${translations[currentLang].alertDeleteConfirm} "${prompts[selectedId].name}"?`)){
+                    delete prompts[selectedId]; savePrompts(); populateDropdown();
+                    if(prompts[DEFAULT_TEMPLATE_ID]) D.templateSelect.value=DEFAULT_TEMPLATE_ID;
+                    displaySelectedPrompt();
+                }
+            });
 
-            // 新增：设置保存/重置
+            D.copyBtn.addEventListener('click',()=>{
+                const finalPrompt=generateFinalPrompt(); if(finalPrompt){
+                    navigator.clipboard.writeText(finalPrompt).then(()=>{
+                        const originalText=D.copyBtn.textContent; D.copyBtn.textContent=translations[currentLang].copiedBtn; D.copyBtn.disabled=true;
+                        setTimeout(()=>{ D.copyBtn.textContent=originalText; D.copyBtn.disabled=false; },2000);
+                    }).catch(err=>{ console.error('Copy failed:',err); alert(translations[currentLang].alertCopyError); });
+                }
+            });
+
+            // 设置保存/重置
             D.settingsSaveBtn.addEventListener('click', ()=>{
                 const top = Math.max(0, parseInt(D.settingTopInput.value||DEFAULT_UI.top,10));
                 const tw = Math.max(40, parseInt(D.settingToggleWidthInput.value||DEFAULT_UI.toggleWidth,10));
@@ -575,32 +690,249 @@ USER QUESTION (paste multi-paragraph content between the markers):
                 applyUISettings(document.getElementById('prompt-helper-container'));
             });
 
-            D.submitBtn.addEventListener('click',()=>{ const finalPrompt=generateFinalPrompt(); if(!finalPrompt) return; const inputElement=findInputElement(); if(!inputElement){ alert(translations[currentLang].alertSubmitError); return; }
+            // 导出
+            D.exportBtn.addEventListener('click',()=>{
+                const list=[];
+                for(const id in prompts){
+                    if(id===DEFAULT_TEMPLATE_ID) continue;
+                    const name=(prompts[id]?.name||'').trim();
+                    const template=(prompts[id]?.template||'').trim();
+                    if(name && template) list.push({name,template});
+                }
+                if(!list.length){ alert(translations[currentLang].alertExportEmpty); return; }
+                const payload={ app:'PromptHelper', schema:EXPORT_SCHEMA, version:1, exportedAt:new Date().toISOString(), templates:list };
+                const filename=`prompthelper-templates-${nowStamp()}.json`;
+                downloadJSON(filename, payload);
+                alert(translations[currentLang].alertExportDone + filename);
+            });
+
+            // 导入
+            D.importBtn.addEventListener('click',()=> D.importFileInput.click());
+            D.importFileInput.addEventListener('change',(evt)=>{
+                const file=evt.target.files && evt.target.files[0];
+                if(!file) return;
+                const reader=new FileReader();
+                reader.onerror=()=>alert(translations[currentLang].alertImportInvalid);
+                reader.onload=()=>{
+                    try{
+                        const text=String(reader.result||'').trim();
+                        const parsed=text?JSON.parse(text):null;
+                        const arr=normalizeImportedList(parsed);
+                        if(!arr.length){ alert(translations[currentLang].alertImportInvalid); return; }
+                        const existingNames=new Set(Object.values(prompts).map(p=>p.name));
+                        let added=0, renamed=0;
+                        for(const item of arr){
+                            if(!item) continue;
+                            const name=String(item.name||'').trim();
+                            const body=String(item.template||'').trim();
+                            if(!name || !body) continue;
+                            let finalName=name;
+                            if(existingNames.has(finalName)){ finalName=ensureUniqueName(name, existingNames); if(finalName!==name) renamed++; }
+                            const id=genId();
+                            prompts[id]={name:finalName, template:body};
+                            existingNames.add(finalName);
+                            added++;
+                        }
+                        savePrompts(); populateDropdown(); displaySelectedPrompt();
+                        alert(translations[currentLang].alertImportDone(added,renamed));
+                        D.importFileInput.value='';
+                    }catch(e){
+                        console.error(e);
+                        alert(translations[currentLang].alertImportInvalid);
+                    }
+                };
+                reader.readAsText(file,'utf-8');
+            });
+
+            // 提交到站点输入框
+            D.submitBtn.addEventListener('click',()=>{
+                const finalPrompt=generateFinalPrompt(); if(!finalPrompt) return;
+                const inputElement=findInputElement(); if(!inputElement){ alert(translations[currentLang].alertSubmitError); return; }
+
                 if(inputElement.tagName.toLowerCase()==='textarea'){
                     if(window.location.hostname.includes('tongyi.com')){
-                        const reactKey=Object.keys(inputElement).find(key=>key.startsWith('__reactInternalInstance')||key.startsWith('__reactFiber')||key.startsWith('__reactProps')); if(reactKey){ try{ const fiberNode=inputElement[reactKey]; const possiblePaths=[fiberNode?.memoizedProps?.onChange,fiberNode?.return?.memoizedProps?.onChange,fiberNode?.return?.return?.memoizedProps?.onChange,fiberNode?.pendingProps?.onChange]; for(const onChange of possiblePaths){ if(onChange&&typeof onChange==='function'){ const fakeEvent={target:{value:finalPrompt},currentTarget:{value:finalPrompt},preventDefault:()=>{},stopPropagation:()=>{}}; onChange(fakeEvent); break; } } }catch(e){ console.log('[PromptHelper] React状态操作失败:',e);} } inputElement.focus(); inputElement.value=''; inputElement.value=finalPrompt; try{ Object.defineProperty(inputElement,'value',{value:finalPrompt,writable:true,configurable:true}); }catch(_){} [ new Event('focus',{bubbles:true}), tryCreateInputEvent('beforeinput',{bubbles:true,cancelable:true,data:finalPrompt,inputType:'insertText'}), tryCreateInputEvent('input',{bubbles:true,cancelable:true,data:finalPrompt,inputType:'insertText'}), new Event('change',{bubbles:true}), tryCreateKeyboardEvent('keydown',{bubbles:true,key:'a'}), tryCreateKeyboardEvent('keyup',{bubbles:true,key:'a'}), new Event('blur',{bubbles:true}) ].forEach((ev,i)=>setTimeout(()=>inputElement.dispatchEvent(ev),i*10)); setTimeout(()=>{ if(inputElement.value!==finalPrompt) inputElement.value=finalPrompt; inputElement.blur(); setTimeout(()=>{ inputElement.focus(); inputElement.value=finalPrompt; inputElement.dispatchEvent(tryCreateInputEvent('input',{bubbles:true,cancelable:true,data:finalPrompt,inputType:'insertText'})); inputElement.dispatchEvent(new Event('change',{bubbles:true})); inputElement.dispatchEvent(new Event('propertychange',{bubbles:true})); window.dispatchEvent(new Event('resize')); },50); },150);
+                        const reactKey=Object.keys(inputElement).find(key=>key.startsWith('__reactInternalInstance')||key.startsWith('__reactFiber')||key.startsWith('__reactProps'));
+                        if(reactKey){ try{
+                            const fiberNode=inputElement[reactKey];
+                            const possiblePaths=[fiberNode?.memoizedProps?.onChange,fiberNode?.return?.memoizedProps?.onChange,fiberNode?.return?.return?.memoizedProps?.onChange,fiberNode?.pendingProps?.onChange];
+                            for(const onChange of possiblePaths){ if(onChange&&typeof onChange==='function'){ const fakeEvent={target:{value:finalPrompt},currentTarget:{value:finalPrompt},preventDefault:()=>{},stopPropagation:()=>{}}; onChange(fakeEvent); break; } }
+                        }catch(e){ console.log('[PromptHelper] React状态操作失败:',e);} }
+                        inputElement.focus(); inputElement.value=''; inputElement.value=finalPrompt;
+                        try{ Object.defineProperty(inputElement,'value',{value:finalPrompt,writable:true,configurable:true}); }catch(_){}
+                        [ new Event('focus',{bubbles:true}),
+                          tryCreateInputEvent('beforeinput',{bubbles:true,cancelable:true,data:finalPrompt,inputType:'insertText'}),
+                          tryCreateInputEvent('input',{bubbles:true,cancelable:true,data:finalPrompt,inputType:'insertText'}),
+                          new Event('change',{bubbles:true}),
+                          tryCreateKeyboardEvent('keydown',{bubbles:true,key:'a'}),
+                          tryCreateKeyboardEvent('keyup',{bubbles:true,key:'a'}),
+                          new Event('blur',{bubbles:true})
+                        ].forEach((ev,i)=>setTimeout(()=>inputElement.dispatchEvent(ev),i*10));
+                        setTimeout(()=>{ if(inputElement.value!==finalPrompt) inputElement.value=finalPrompt; inputElement.blur(); setTimeout(()=>{ inputElement.focus(); inputElement.value=finalPrompt; inputElement.dispatchEvent(tryCreateInputEvent('input',{bubbles:true,cancelable:true,data:finalPrompt,inputType:'insertText'})); inputElement.dispatchEvent(new Event('change',{bubbles:true})); inputElement.dispatchEvent(new Event('propertychange',{bubbles:true})); window.dispatchEvent(new Event('resize')); },50); },150);
                     } else if(window.location.hostname.includes('grok.com')){
-                        inputElement.focus(); setNativeValue(inputElement,''); inputElement.dispatchEvent(new Event('input',{bubbles:true})); setNativeValue(inputElement,finalPrompt); try{ inputElement.setAttribute('value',finalPrompt);}catch(_){} inputElement.dispatchEvent(tryCreateInputEvent('beforeinput',{bubbles:true,cancelable:true,inputType:'insertFromPaste',data:finalPrompt})); inputElement.dispatchEvent(new Event('input',{bubbles:true})); inputElement.dispatchEvent(tryCreateInputEvent('input',{bubbles:true,cancelable:true,inputType:'insertText',data:finalPrompt})); inputElement.dispatchEvent(new Event('change',{bubbles:true})); ['keydown','keypress','keyup'].forEach(type=>inputElement.dispatchEvent(tryCreateKeyboardEvent(type,{bubbles:true,cancelable:true,key:'a',code:'KeyA'}))); try{ inputElement.setSelectionRange(finalPrompt.length,finalPrompt.length);}catch(_){} setTimeout(()=>{ inputElement.dispatchEvent(new Event('input',{bubbles:true})); inputElement.dispatchEvent(new Event('change',{bubbles:true})); },50);
+                        inputElement.focus(); setNativeValue(inputElement,''); inputElement.dispatchEvent(new Event('input',{bubbles:true})); setNativeValue(inputElement,finalPrompt);
+                        try{ inputElement.setAttribute('value',finalPrompt);}catch(_){} inputElement.dispatchEvent(tryCreateInputEvent('beforeinput',{bubbles:true,cancelable:true,inputType:'insertFromPaste',data:finalPrompt})); inputElement.dispatchEvent(new Event('input',{bubbles:true})); inputElement.dispatchEvent(tryCreateInputEvent('input',{bubbles:true,cancelable:true,inputType:'insertText',data:finalPrompt})); inputElement.dispatchEvent(new Event('change',{bubbles:true}));
+                        ['keydown','keypress','keyup'].forEach(type=>inputElement.dispatchEvent(tryCreateKeyboardEvent(type,{bubbles:true,cancelable:true,key:'a',code:'KeyA'})));
+                        try{ inputElement.setSelectionRange(finalPrompt.length,finalPrompt.length);}catch(_){}
+                        setTimeout(()=>{ inputElement.dispatchEvent(new Event('input',{bubbles:true})); inputElement.dispatchEvent(new Event('change',{bubbles:true})); },50);
                     } else {
-                        if(window.location.hostname.includes('openai.com')||window.location.hostname.includes('chatgpt.com')){ inputElement.value=finalPrompt; const isChrome=navigator.userAgent.includes('Chrome')&&!navigator.userAgent.includes('Firefox'); if(isChrome){ setTimeout(()=>{ inputElement.focus(); inputElement.value=finalPrompt; if(typeof inputElement.setSelectionRange==='function') inputElement.setSelectionRange(finalPrompt.length,finalPrompt.length); inputElement.dispatchEvent(tryCreateInputEvent('input',{bubbles:true,cancelable:false,inputType:'insertText'})); let protectionCount=0; const protect=()=>{ if(protectionCount<20){ const cur=inputElement.value; if(cur.replace(/\n/g,'')===finalPrompt.replace(/\n/g,'')&&!cur.includes('\n')&&finalPrompt.includes('\n')){ inputElement.value=finalPrompt; if(typeof inputElement.setSelectionRange==='function') inputElement.setSelectionRange(finalPrompt.length,finalPrompt.length); inputElement.dispatchEvent(tryCreateInputEvent('input',{bubbles:true,cancelable:false,inputType:'insertText'})); } protectionCount++; setTimeout(protect,100);} }; setTimeout(protect,100); },50);} else { inputElement.dispatchEvent(new Event('input',{bubbles:true})); if(typeof inputElement.setSelectionRange==='function') inputElement.setSelectionRange(finalPrompt.length,finalPrompt.length); } } else { inputElement.value=finalPrompt; }
-                        if(window.location.hostname.includes('deepseek.com')){ const parentDiv=inputElement.parentElement; if(parentDiv){ let displayDiv=parentDiv.querySelector('.b13855df'); if(!displayDiv){ const allDivs=parentDiv.querySelectorAll('div'); for(const div of allDivs){ if(!div.classList.contains('_24fad49')&&div!==parentDiv){ displayDiv=div; break; } } } if(displayDiv){ displayDiv.innerHTML=''; finalPrompt.split('\n').forEach((line,idx)=>{ if(idx>0) displayDiv.appendChild(document.createElement('br')); displayDiv.appendChild(document.createTextNode(line)); }); } } }
+                        if(window.location.hostname.includes('openai.com')||window.location.hostname.includes('chatgpt.com')){
+                            inputElement.value=finalPrompt;
+                            const isChrome=navigator.userAgent.includes('Chrome')&&!navigator.userAgent.includes('Firefox');
+                            if(isChrome){
+                                setTimeout(()=>{
+                                    inputElement.focus(); inputElement.value=finalPrompt;
+                                    if(typeof inputElement.setSelectionRange==='function') inputElement.setSelectionRange(finalPrompt.length,finalPrompt.length);
+                                    inputElement.dispatchEvent(tryCreateInputEvent('input',{bubbles:true,cancelable:false,inputType:'insertText'}));
+                                    let protectionCount=0;
+                                    const protect=()=>{ if(protectionCount<20){ const cur=inputElement.value; if(cur.replace(/\n/g,'')===finalPrompt.replace(/\n/g,'')&&!cur.includes('\n')&&finalPrompt.includes('\n')){ inputElement.value=finalPrompt; if(typeof inputElement.setSelectionRange==='function') inputElement.setSelectionRange(finalPrompt.length,finalPrompt.length); inputElement.dispatchEvent(tryCreateInputEvent('input',{bubbles:true,cancelable:false,inputType:'insertText'})); } protectionCount++; setTimeout(protect,100);} };
+                                    setTimeout(protect,100);
+                                },50);
+                            } else {
+                                inputElement.dispatchEvent(new Event('input',{bubbles:true}));
+                                if(typeof inputElement.setSelectionRange==='function') inputElement.setSelectionRange(finalPrompt.length,finalPrompt.length);
+                            }
+                        } else { inputElement.value=finalPrompt; }
+                        if(window.location.hostname.includes('deepseek.com')){
+                            const parentDiv=inputElement.parentElement;
+                            if(parentDiv){
+                                let displayDiv=parentDiv.querySelector('.b13855df');
+                                if(!displayDiv){
+                                    const allDivs=parentDiv.querySelectorAll('div');
+                                    for(const div of allDivs){ if(!div.classList.contains('_24fad49')&&div!==parentDiv){ displayDiv=div; break; } }
+                                }
+                                if(displayDiv){
+                                    displayDiv.innerHTML=''; finalPrompt.split('\n').forEach((line,idx)=>{ if(idx>0) displayDiv.appendChild(document.createElement('br')); displayDiv.appendChild(document.createTextNode(line)); });
+                                }
+                            }
+                        }
                     }
                 } else if(inputElement.getAttribute('contenteditable')==='true'){
-                    if(window.location.hostname.includes('claude.ai')||window.location.hostname.includes('fuclaude.com')){ pasteIntoProseMirror(inputElement,finalPrompt); inputElement.dispatchEvent(new Event('input',{bubbles:true})); inputElement.dispatchEvent(new Event('change',{bubbles:true})); try{ const range=document.createRange(); const sel=window.getSelection(); range.selectNodeContents(inputElement); range.collapse(false); sel.removeAllRanges(); sel.addRange(range);}catch(_){} } else { if(window.location.hostname.includes('claude.ai')||window.location.hostname.includes('fuclaude.com')||window.location.hostname.includes('openai.com')||window.location.hostname.includes('chatgpt.com')){ inputElement.innerHTML=''; const lines=finalPrompt.split('\n'); lines.forEach((line,index)=>{ if(index>0) inputElement.appendChild(document.createElement('br')); if(line.length>0) inputElement.appendChild(document.createTextNode(line)); else if(index<lines.length-1) inputElement.appendChild(document.createElement('br')); }); const isChrome=navigator.userAgent.includes('Chrome')&&!navigator.userAgent.includes('Firefox'); if(isChrome){ const needEscape=(window.location.hostname.includes('openai.com')||window.location.hostname.includes('chatgpt.com')); const htmlWithBreaks=needEscape?escapeHtml(finalPrompt).replace(/\n/g,'<br>'):finalPrompt.replace(/\n/g,'<br>'); setTimeout(()=>{ inputElement.focus(); inputElement.innerHTML=htmlWithBreaks; const range=document.createRange(); const sel=window.getSelection(); range.selectNodeContents(inputElement); range.collapse(false); sel.removeAllRanges(); sel.addRange(range); inputElement.dispatchEvent(tryCreateInputEvent('input',{bubbles:true,cancelable:false,inputType:'insertFromPaste'})); let protectionCount=0; const protect=()=>{ if(protectionCount<20){ const currentHtml=inputElement.innerHTML; const currentText=inputElement.textContent||inputElement.innerText; if(currentText.replace(/\n/g,'')===finalPrompt.replace(/\n/g,'')&&!currentHtml.includes('<br>')&&finalPrompt.includes('\n')){ inputElement.innerHTML=htmlWithBreaks; try{ const r=document.createRange(); const s=window.getSelection(); r.selectNodeContents(inputElement); r.collapse(false); s.removeAllRanges(); s.addRange(r);}catch(_){} } protectionCount++; setTimeout(protect,100);} }; setTimeout(protect,100); },50);} } else { inputElement.textContent=finalPrompt; } }
-                } else { if('value' in inputElement) inputElement.value=finalPrompt; if(inputElement.textContent!==undefined) inputElement.textContent=finalPrompt; if(inputElement.innerText!==undefined) inputElement.innerText=finalPrompt; }
+                    if(window.location.hostname.includes('claude.ai')||window.location.hostname.includes('fuclaude.com')){
+                        pasteIntoProseMirror(inputElement,finalPrompt);
+                        inputElement.dispatchEvent(new Event('input',{bubbles:true}));
+                        inputElement.dispatchEvent(new Event('change',{bubbles:true}));
+                        try{ const range=document.createRange(); const sel=window.getSelection(); range.selectNodeContents(inputElement); range.collapse(false); sel.removeAllRanges(); sel.addRange(range);}catch(_){}
+                    } else {
+                        if(window.location.hostname.includes('claude.ai')||window.location.hostname.includes('fuclaude.com')||window.location.hostname.includes('openai.com')||window.location.hostname.includes('chatgpt.com')){
+                            inputElement.innerHTML='';
+                            const lines=finalPrompt.split('\n');
+                            lines.forEach((line,index)=>{ if(index>0) inputElement.appendChild(document.createElement('br')); if(line.length>0) inputElement.appendChild(document.createTextNode(line)); else if(index<lines.length-1) inputElement.appendChild(document.createElement('br')); });
+                            const isChrome=navigator.userAgent.includes('Chrome')&&!navigator.userAgent.includes('Firefox');
+                            if(isChrome){
+                                const needEscape=(window.location.hostname.includes('openai.com')||window.location.hostname.includes('chatgpt.com'));
+                                const htmlWithBreaks=needEscape?escapeHtml(finalPrompt).replace(/\n/g,'<br>'):finalPrompt.replace(/\n/g,'<br>');
+                                setTimeout(()=>{
+                                    inputElement.focus(); inputElement.innerHTML=htmlWithBreaks;
+                                    const range=document.createRange(); const sel=window.getSelection();
+                                    range.selectNodeContents(inputElement); range.collapse(false); sel.removeAllRanges(); sel.addRange(range);
+                                    inputElement.dispatchEvent(tryCreateInputEvent('input',{bubbles:true,cancelable:false,inputType:'insertFromPaste'}));
+                                    let protectionCount=0;
+                                    const protect=()=>{ if(protectionCount<20){ const currentHtml=inputElement.innerHTML; const currentText=inputElement.textContent||inputElement.innerText;
+                                        if(currentText.replace(/\n/g,'')===finalPrompt.replace(/\n/g,'')&&!currentHtml.includes('<br>')&&finalPrompt.includes('\n')){
+                                            inputElement.innerHTML=htmlWithBreaks;
+                                            try{ const r=document.createRange(); const s=window.getSelection(); r.selectNodeContents(inputElement); r.collapse(false); s.removeAllRanges(); s.addRange(r);}catch(_){}
+                                        }
+                                        protectionCount++; setTimeout(protect,100);
+                                    }};
+                                    setTimeout(protect,100);
+                                },50);
+                            }
+                        } else { inputElement.textContent=finalPrompt; }
+                    }
+                } else {
+                    if('value' in inputElement) inputElement.value=finalPrompt;
+                    if(inputElement.textContent!==undefined) inputElement.textContent=finalPrompt;
+                    if(inputElement.innerText!==undefined) inputElement.innerText=finalPrompt;
+                }
 
-                ['input','change','keydown','keyup','paste'].forEach(type=>{ let ev; if(type==='input') ev=tryCreateInputEvent('input',{bubbles:true,cancelable:true,inputType:'insertText',data:finalPrompt}); else if(type==='keydown'||type==='keyup') ev=tryCreateKeyboardEvent(type,{bubbles:true,cancelable:true,key:'a',code:'KeyA'}); else ev=new Event(type,{bubbles:true,cancelable:true}); inputElement.dispatchEvent(ev); });
+                ['input','change','keydown','keyup','paste'].forEach(type=>{
+                    let ev; if(type==='input') ev=tryCreateInputEvent('input',{bubbles:true,cancelable:true,inputType:'insertText',data:finalPrompt});
+                    else if(type==='keydown'||type==='keyup') ev=tryCreateKeyboardEvent(type,{bubbles:true,cancelable:true,key:'a',code:'KeyA'});
+                    else ev=new Event(type,{bubbles:true,cancelable:true});
+                    inputElement.dispatchEvent(ev);
+                });
 
-                if(window.location.hostname.includes('deepseek.com')){ ['keydown','keypress','keyup'].forEach(t=>inputElement.dispatchEvent(tryCreateKeyboardEvent(t,{bubbles:true,cancelable:true,key:'a',code:'KeyA',which:65,keyCode:65}))); inputElement.dispatchEvent(new Event('compositionstart',{bubbles:true})); inputElement.dispatchEvent(new Event('compositionupdate',{bubbles:true})); inputElement.dispatchEvent(new Event('compositionend',{bubbles:true})); }
+                if(window.location.hostname.includes('deepseek.com')){
+                    ['keydown','keypress','keyup'].forEach(t=>inputElement.dispatchEvent(tryCreateKeyboardEvent(t,{bubbles:true,cancelable:true,key:'a',code:'KeyA',which:65,keyCode:65})));
+                    inputElement.dispatchEvent(new Event('compositionstart',{bubbles:true}));
+                    inputElement.dispatchEvent(new Event('compositionupdate',{bubbles:true}));
+                    inputElement.dispatchEvent(new Event('compositionend',{bubbles:true}));
+                }
 
-                inputElement.focus(); if(inputElement.tagName.toLowerCase()==='textarea'||inputElement.type==='text'){ try{ inputElement.setSelectionRange(finalPrompt.length,finalPrompt.length);}catch(_){}} else if(inputElement.getAttribute('contenteditable')==='true'){ const range=document.createRange(); const sel=window.getSelection(); if(sel&&inputElement.childNodes.length>0){ range.selectNodeContents(inputElement); range.collapse(false); sel.removeAllRanges(); sel.addRange(range);} }
+                inputElement.focus();
+                if(inputElement.tagName.toLowerCase()==='textarea'||inputElement.type==='text'){
+                    try{ inputElement.setSelectionRange(finalPrompt.length,finalPrompt.length);}catch(_){}
+                } else if(inputElement.getAttribute('contenteditable')==='true'){
+                    const range=document.createRange(); const sel=window.getSelection();
+                    if(sel&&inputElement.childNodes.length>0){ range.selectNodeContents(inputElement); range.collapse(false); sel.removeAllRanges(); sel.addRange(range);}
+                }
 
-                setTimeout(()=>{ inputElement.dispatchEvent(new Event('input',{bubbles:true})); inputElement.dispatchEvent(new Event('change',{bubbles:true})); const specialSites=['deepseek.com','kimi.moonshot.cn','kimi.com','www.kimi.com','tongyi.com','yuanbao.tencent.com','doubao.com']; const currentSiteCheck=specialSites.find(site=>window.location.hostname.includes(site)); if(currentSiteCheck) console.log(`[PromptHelper] 延迟检查 ${currentSiteCheck} 状态`); },100);
+                setTimeout(()=>{
+                    inputElement.dispatchEvent(new Event('input',{bubbles:true}));
+                    inputElement.dispatchEvent(new Event('change',{bubbles:true}));
+                    const specialSites=['deepseek.com','kimi.moonshot.cn','kimi.com','www.kimi.com','tongyi.com','yuanbao.tencent.com','doubao.com'];
+                    const currentSiteCheck=specialSites.find(site=>window.location.hostname.includes(site));
+                    if(currentSiteCheck) console.log(`[PromptHelper] 延迟检查 ${currentSiteCheck} 状态`);
+                },100);
 
-                const specialSites=['deepseek.com','kimi.moonshot.cn','kimi.com','www.kimi.com','tongyi.com','yuanbao.tencent.com','aistudio.google.com','doubao.com']; const currentSite=specialSites.find(site=>window.location.hostname.includes(site)); if(currentSite){ const skipComplexProcessing=(currentSite==='kimi.moonshot.cn'||currentSite==='kimi.com'||currentSite==='www.kimi.com')&&inputElement.getAttribute('contenteditable')==='true'; if(!skipComplexProcessing){ setTimeout(()=>{ const parentDiv=inputElement.parentElement; if(parentDiv){ inputElement.blur(); setTimeout(()=>{ inputElement.focus(); try{ if(inputElement.tagName.toLowerCase()==='textarea'||inputElement.type==='text') inputElement.setSelectionRange(finalPrompt.length,finalPrompt.length);}catch(_){} },50); window.dispatchEvent(new Event('resize')); const reactKey=Object.keys(inputElement).find(key=>key.startsWith('__reactInternalInstance')||key.startsWith('__reactFiber')); if(reactKey){ try{ const fiberNode=inputElement[reactKey]; if(fiberNode&&fiberNode.memoizedProps&&typeof fiberNode.memoizedProps.onChange==='function'){ const fakeEvent={target:{value:finalPrompt},currentTarget:{value:finalPrompt},preventDefault:()=>{},stopPropagation:()=>{}}; fiberNode.memoizedProps.onChange(fakeEvent); } }catch(e){ console.log(`[PromptHelper] ${currentSite} React状态更新失败:`,e);} } if(currentSite==='tongyi.com'){ inputElement.focus(); inputElement.value=''; const txt=finalPrompt; for(let i=0;i<txt.length;i++){ const ch=txt[i]; inputElement.value+=ch; [ tryCreateKeyboardEvent('keydown',{bubbles:true,cancelable:true,key:ch}), tryCreateInputEvent('input',{bubbles:true,cancelable:true,data:ch,inputType:'insertText'}), tryCreateKeyboardEvent('keyup',{bubbles:true,cancelable:true,key:ch}) ].forEach(ev=>inputElement.dispatchEvent(ev)); } inputElement.dispatchEvent(new Event('change',{bubbles:true})); inputElement.dispatchEvent(new Event('blur',{bubbles:true})); setTimeout(()=>inputElement.focus(),50);
-                                } else if(currentSite==='yuanbao.tencent.com'){ try{ inputElement.setAttribute('value',finalPrompt);}catch(_){} }
-                                else if(currentSite==='aistudio.google.com'){ const angularKey=Object.keys(inputElement).find(key=>key.startsWith('__ngContext')||key.startsWith('__ng')||key.includes('angular')); if(angularKey){ try{ const ngZone=window.ng?.getComponent?.(inputElement); if(ngZone){ ngZone.run(()=>{ inputElement.value=finalPrompt; if(inputElement.textContent!==undefined) inputElement.textContent=finalPrompt; }); } }catch(e){ console.log('[PromptHelper] Angular状态操作失败:',e);} } if(inputElement.getAttribute('contenteditable')==='true'){ inputElement.innerHTML=''; finalPrompt.split('\n').forEach((line,idx)=>{ if(idx>0) inputElement.appendChild(document.createElement('br')); inputElement.appendChild(document.createTextNode(line)); }); } [ new Event('focus',{bubbles:true}), tryCreateInputEvent('input',{bubbles:true,cancelable:true,inputType:'insertText'}), new Event('change',{bubbles:true}), new Event('blur',{bubbles:true}) ].forEach((ev,i)=>setTimeout(()=>inputElement.dispatchEvent(ev),i*20)); }
-                            } setTimeout(()=>{ if('value' in inputElement && inputElement.value!==finalPrompt){ inputElement.value=finalPrompt; inputElement.dispatchEvent(new Event('input',{bubbles:true})); } },300); },500); } }
+                const specialSites=['deepseek.com','kimi.moonshot.cn','kimi.com','www.kimi.com','tongyi.com','yuanbao.tencent.com','aistudio.google.com','doubao.com'];
+                const currentSite=specialSites.find(site=>window.location.hostname.includes(site));
+                if(currentSite){
+                    const skipComplexProcessing=(currentSite==='kimi.moonshot.cn'||currentSite==='kimi.com'||currentSite==='www.kimi.com')&&inputElement.getAttribute('contenteditable')==='true';
+                    if(!skipComplexProcessing){
+                        setTimeout(()=>{
+                            const parentDiv=inputElement.parentElement;
+                            if(parentDiv){
+                                inputElement.blur();
+                                setTimeout(()=>{ inputElement.focus(); try{ if(inputElement.tagName.toLowerCase()==='textarea'||inputElement.type==='text') inputElement.setSelectionRange(finalPrompt.length,finalPrompt.length);}catch(_){} },50);
+                                window.dispatchEvent(new Event('resize'));
+                                const reactKey=Object.keys(inputElement).find(key=>key.startsWith('__reactInternalInstance')||key.startsWith('__reactFiber'));
+                                if(reactKey){
+                                    try{
+                                        const fiberNode=inputElement[reactKey];
+                                        if(fiberNode&&fiberNode.memoizedProps&&typeof fiberNode.memoizedProps.onChange==='function'){
+                                            const fakeEvent={target:{value:finalPrompt},currentTarget:{value:finalPrompt},preventDefault:()=>{},stopPropagation:()=>{}};
+                                            fiberNode.memoizedProps.onChange(fakeEvent);
+                                        }
+                                    }catch(e){ console.log(`[PromptHelper] ${currentSite} React状态更新失败:`,e); }
+                                }
+                                if(currentSite==='tongyi.com'){
+                                    inputElement.focus(); inputElement.value='';
+                                    const txt=finalPrompt;
+                                    for(let i=0;i<txt.length;i++){
+                                        const ch=txt[i]; inputElement.value+=ch;
+                                        [ tryCreateKeyboardEvent('keydown',{bubbles:true,cancelable:true,key:ch}),
+                                          tryCreateInputEvent('input',{bubbles:true,cancelable:true,data:ch,inputType:'insertText'}),
+                                          tryCreateKeyboardEvent('keyup',{bubbles:true,cancelable:true,key:ch})
+                                        ].forEach(ev=>inputElement.dispatchEvent(ev));
+                                    }
+                                    inputElement.dispatchEvent(new Event('change',{bubbles:true}));
+                                    inputElement.dispatchEvent(new Event('blur',{bubbles:true}));
+                                    setTimeout(()=>inputElement.focus(),50);
+                                } else if(currentSite==='yuanbao.tencent.com'){
+                                    try{ inputElement.setAttribute('value',finalPrompt);}catch(_){}
+                                } else if(currentSite==='aistudio.google.com'){
+                                    const angularKey=Object.keys(inputElement).find(key=>key.startsWith('__ngContext')||key.startsWith('__ng')||key.includes('angular'));
+                                    if(angularKey){
+                                        try{
+                                            const ngZone=window.ng?.getComponent?.(inputElement);
+                                            if(ngZone){ ngZone.run(()=>{ inputElement.value=finalPrompt; if(inputElement.textContent!==undefined) inputElement.textContent=finalPrompt; }); }
+                                        }catch(e){ console.log('[PromptHelper] Angular状态操作失败:',e); }
+                                    }
+                                    if(inputElement.getAttribute('contenteditable')==='true'){
+                                        inputElement.innerHTML=''; finalPrompt.split('\n').forEach((line,idx)=>{ if(idx>0) inputElement.appendChild(document.createElement('br')); inputElement.appendChild(document.createTextNode(line)); });
+                                    }
+                                    [ new Event('focus',{bubbles:true}),
+                                      tryCreateInputEvent('input',{bubbles:true,cancelable:true,inputType:'insertText'}),
+                                      new Event('change',{bubbles:true}),
+                                      new Event('blur',{bubbles:true})
+                                    ].forEach((ev,i)=>setTimeout(()=>inputElement.dispatchEvent(ev),i*20));
+                                }
+                            }
+                            setTimeout(()=>{ if('value' in inputElement && inputElement.value!==finalPrompt){ inputElement.value=finalPrompt; inputElement.dispatchEvent(new Event('input',{bubbles:true})); } },300);
+                        },500);
+                    }
+                }
 
                 D.userQuestionTextarea.value=''; D.contentPanel.classList.add('hidden');
             });
