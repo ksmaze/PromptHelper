@@ -104,11 +104,9 @@ User Question:
 
 ## 📋 Built-in Templates
 
-The script comes with 3 simple and practical preset templates:
+The script comes with 1 powerful preset template:
 
-1. **General Response Template**: Suitable for general inquiries and in-depth analysis
-2. **Code Review Template**: Designed specifically for code review, performance analysis, and optimization suggestions
-3. **English Polishing Template**: For grammar checking and expression optimization of English text
+**Interactive Research Template**: An advanced template that combines systematic thinking with web research capabilities. Features audit-grade research methodology, multi-perspective analysis, and citation-backed reasoning chains. Perfect for complex inquiries requiring thorough investigation and evidence-based responses.
 
 ## 🎨 Interface Design
 
@@ -204,6 +202,27 @@ Contributions are welcome! You can:
 - **Project URL**: https://github.com/dongshuyan/PromptHelper
 - **License**: MIT
 - **Latest Version**: v1.0
+
+## 🎯 Interactive Template Example
+
+Here's a demonstration of the built-in Interactive Research Template in action:
+
+### Question Input
+![Question Input](https://github.com/dongshuyan/PromptHelper/blob/master/pictures/Q1.png)
+
+### Initial Response
+The template guides the AI to perform systematic analysis:
+![Initial Response](https://github.com/dongshuyan/PromptHelper/blob/master/pictures/Q2.png)
+
+### Complete Analysis
+Final comprehensive response with citations and evidence:
+![Complete Analysis](https://github.com/dongshuyan/PromptHelper/blob/master/pictures/Q3.png)
+
+The Interactive Research Template demonstrates:
+- **Systematic approach**: Multi-gate verification process
+- **Evidence-based reasoning**: Citation-backed conclusions  
+- **Thorough investigation**: Web research integration
+- **Structured output**: Clear, audit-grade presentation
 
 ---
 
