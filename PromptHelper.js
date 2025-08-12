@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         PromptHelper
 // @namespace    http://tampermonkey.net/
-// @version      1.5.1
-// @description  PromptHelper：通用于 ChatGPT, Gemini, Claude, Kimi, DeepSeek, 通义、元宝、Google AI Studio、Grok、豆包 的侧边模板助手（默认仅保留“通用交互式提问模板”；稳健事件触发；横向按钮与可调高度；支持模板导入/导出）。本版将导入/导出与基础设置迁移到“设置页”，主页面仅保留基础功能。
+// @version      1.6.0
+// @description  PromptHelper：通用于 ChatGPT, Gemini, Claude, Kimi, DeepSeek, 通义、元宝、Google AI Studio、Grok、豆包 的侧边模板助手（默认仅保留“通用交互式提问模板”；稳健事件触发；横向按钮与可调高度；支持模板导入/导出）。本版：右上角“设置”页、主/设分离视图，收紧但保留必要间距。
 // @author       Sauterne
 // @match        http://chat.openai.com/*
 // @match        https://chat.openai.com/*
@@ -256,10 +256,10 @@ USER QUESTION (paste multi-paragraph content between the markers):
                     border: 1px solid #dee2e6 !important;
                     border-radius: 8px !important;
                     box-shadow: -2px 2px 10px rgba(0,0,0,0.1) !important;
-                    padding: 15px !important;
+                    padding: 14px !important;
                     display: flex !important;
                     flex-direction: column !important;
-                    gap: 15px !important;
+                    gap: 10px !important;
                     transition: transform 0.3s ease-in-out, opacity 0.3s ease-in-out !important;
                     color: #333 !important;
                     text-align: left !important;
@@ -267,28 +267,44 @@ USER QUESTION (paste multi-paragraph content between the markers):
                     overflow-y: auto !important;
                     overscroll-behavior: contain !important;
                     -webkit-overflow-scrolling: touch !important;
-                    padding-bottom: 20px !important;
+                    padding-bottom: 14px !important;
                 }
                 #prompt-helper-content.hidden { transform: translateX(100%) !important; opacity: 0 !important; pointer-events: none !important; }
                 #prompt-helper-content h3 { padding: 0 !important; font-size: 18px !important; color: #343a40 !important; text-align: center !important; font-weight: bold !important; }
-                #prompt-helper-content .ph-section { display: flex !important; flex-direction: column !important; gap: 8px !important; }
+
+                /* 主/设双页：用容器 data-view 切换，彻底避免两页叠在一起 */
+                #prompt-helper-content[data-view="main"]    #ph-settings-view { display: none !important; }
+                #prompt-helper-content[data-view="settings"] #ph-main-view     { display: none !important; }
+
+                /* 紧凑但留白的垂直节距 */
+                #prompt-helper-content .ph-section { display: flex !important; flex-direction: column !important; gap: 6px !important; }
+                #prompt-helper-content .ph-section + .ph-section { margin-top: 8px !important; }
+
                 #prompt-helper-content label { font-weight: bold !important; color: #495057 !important; font-size: 14px !important; }
-                #prompt-helper-content select, #prompt-helper-content input, #prompt-helper-content textarea { width: 100% !important; padding: 8px !important; border: 1px solid #ced4da !important; border-radius: 4px !important; font-size: 14px !important; color: #333 !important; background-color: #fff !important; line-height: 1.5 !important; }
+                #prompt-helper-content select, #prompt-helper-content input, #prompt-helper-content textarea {
+                    width: 100% !important; padding: 8px !important; border: 1px solid #ced4da !important; border-radius: 4px !important;
+                    font-size: 14px !important; color: #333 !important; background-color: #fff !important; line-height: 1.5 !important;
+                }
                 #prompt-helper-content textarea { resize: vertical !important; min-height: 100px !important; }
                 #prompt-helper-content #ph-template-body { height: 150px !important; }
                 #prompt-helper-content #ph-user-question { height: 80px !important; }
-                #prompt-helper-content .ph-button-group { display: flex !important; gap: 10px !important; justify-content: space-between !important; }
+
+                /* 按钮组：更小的组内与组上方间距（主页底部两按钮已适度靠近输入框） */
+                #prompt-helper-content .ph-button-group { display: flex !important; gap: 8px !important; justify-content: space-between !important; margin-top: 6px !important; }
                 #prompt-helper-content .ph-button-group button { flex-grow: 1 !important; }
+                #prompt-helper-container #ph-main-view .ph-button-group { margin-top: 6px !important; }
+
                 #prompt-helper-content button { padding: 10px !important; border-radius: 5px !important; border: none !important; cursor: pointer !important; font-size: 14px !important; font-weight: bold !important; transition: background-color 0.2s, color 0.2s !important; color: white !important; }
                 #prompt-helper-content button:disabled { cursor: not-allowed !important; opacity: 0.7 !important; }
+
                 #prompt-helper-container .ph-btn-primary { background-color: #007bff !important; } #prompt-helper-container .ph-btn-primary:hover { background-color: #0056b3 !important; }
                 #prompt-helper-container .ph-btn-secondary { background-color: #6c757d !important; } #prompt-helper-container .ph-btn-secondary:hover { background-color: #5a6268 !important; }
                 #prompt-helper-container .ph-btn-success { background-color: #28a745 !important; } #prompt-helper-container .ph-btn-success:hover { background-color: #218838 !important; }
                 #prompt-helper-container .ph-btn-danger { background-color: #dc3545 !important; } #prompt-helper-container .ph-btn-danger:hover { background-color: #c82333 !important; }
                 #prompt-helper-container button:focus-visible, #prompt-helper-container select:focus-visible, #prompt-helper-container input:focus-visible, #prompt-helper-container textarea:focus-visible { outline: 2px solid #0056b3 !important; outline-offset: 2px !important; }
 
-                /* 头部区域：新增右上角设置按钮容器 */
-                #prompt-helper-container .ph-header { display: flex !important; justify-content: space-between !important; align-items: center !important; margin-bottom: 10px !important; padding: 0 !important; }
+                /* 头部 */
+                #prompt-helper-container .ph-header { display: flex !important; justify-content: space-between !important; align-items: center !important; margin-bottom: 6px !important; padding: 0 !important; }
                 #prompt-helper-container .ph-header-right { display: flex !important; align-items: center !important; gap: 8px !important; }
 
                 #prompt-helper-container #ph-collapse-btn { font-size: 24px !important; cursor: pointer !important; color: #6c757d !important; border: none !important; background: none !important; padding: 0 5px !important; line-height: 1 !important; }
@@ -298,9 +314,8 @@ USER QUESTION (paste multi-paragraph content between the markers):
                 #prompt-helper-container #ph-settings-btn { font-size: 12px !important; color: #6c757d !important; background: #fff !important; border: 1px solid #ced4da !important; padding: 2px 8px !important; border-radius: 4px !important; cursor: pointer !important; }
                 #prompt-helper-container #ph-settings-btn:hover { background: #f1f3f5 !important; }
 
-                /* 视图切换：主视图 / 设置视图 */
-                #prompt-helper-content .ph-hide { display: none !important; }
-
+                /* 设置页：列布局，小间距 */
+                #prompt-helper-container #ph-settings-view { display: flex !important; flex-direction: column !important; gap: 10px !important; }
                 #prompt-helper-content .ph-grid { display: grid !important; grid-template-columns: 1fr 1fr !important; gap: 8px 10px !important; }
                 @media (max-width: 480px) { #prompt-helper-content .ph-grid { grid-template-columns: 1fr !important; } }
             `);
@@ -325,7 +340,8 @@ USER QUESTION (paste multi-paragraph content between the markers):
             const container=create('div','prompt-helper-container');
 
             D.toggleButton=create('button','prompt-helper-toggle');
-            D.contentPanel=create('div','prompt-helper-content',['hidden']);
+            D.contentPanel=create('div','prompt-helper-content',['hidden']); // 总容器
+            D.contentPanel.setAttribute('data-view','main'); // 默认显示主页面
 
             // 头部：左-语言切换，中-标题，右-（设置、收起）
             D.langToggleButton=create('button','ph-lang-toggle',[],{},[document.createTextNode('中/En')]);
@@ -374,7 +390,6 @@ USER QUESTION (paste multi-paragraph content between the markers):
             D.mainView = create('div','ph-main-view',[],{},[section1,section2,section3,section4]);
 
             // === 设置视图（导入/导出 + 基础设置） ===
-            // 导入/导出区（从主视图移到此处）
             D.importBtn=create('button','ph-import-btn',['ph-btn-secondary']);
             D.exportBtn=create('button','ph-export-btn',['ph-btn-secondary']);
             D.importFileInput=create('input','ph-import-file',[],{type:'file',accept:'.json,application/json',style:'display:none'});
@@ -409,8 +424,8 @@ USER QUESTION (paste multi-paragraph content between the markers):
             // 返回按钮（设置页左上角）
             D.backBtn = create('button','ph-back-btn',['ph-btn-secondary'],{},[document.createTextNode('←')]);
 
-            // 设置视图容器（默认隐藏）
-            D.settingsView = create('div','ph-settings-view',['ph-hide'],{},[
+            // 设置视图容器
+            D.settingsView = create('div','ph-settings-view',[],{},[
                 D.backBtn,
                 D.settingsTitleEl, settingsGrid, settingsButtons,
                 sectionIO
@@ -436,10 +451,8 @@ USER QUESTION (paste multi-paragraph content between the markers):
         }
         function ensureUniqueName(baseName, existingSet){
             if(!existingSet.has(baseName)) return baseName;
-            // 先尝试 baseName + " (imported)"
             let candidate = `${baseName}${IMPORT_SUFFIX_BASE}`;
             if(!existingSet.has(candidate)) return candidate;
-            // 继续递增数字
             let i=2;
             while(existingSet.has(`${baseName}${IMPORT_SUFFIX_BASE} ${i}`)) i++;
             return `${baseName}${IMPORT_SUFFIX_BASE} ${i}`;
@@ -449,7 +462,6 @@ USER QUESTION (paste multi-paragraph content between the markers):
         }
         function normalizeImportedList(parsed){
             if(!parsed) return [];
-            // 兼容三种格式：{templates:[{name,template}]}, 直接数组 [{name,template}], 或 map {id:{name,template}}
             if(Array.isArray(parsed)) return parsed;
             if(Array.isArray(parsed.templates)) return parsed.templates;
             if(typeof parsed==='object'){
@@ -617,15 +629,11 @@ USER QUESTION (paste multi-paragraph content between the markers):
                 for(const k of Object.keys(obj)){ if(legacyNames.has(obj[k]?.name)) delete obj[k]; }
             }
 
-            // 视图切换
-            function showMain(){ D.mainView.classList.remove('ph-hide'); D.settingsView.classList.add('ph-hide'); }
-            function showSettings(){ D.settingsView.classList.remove('ph-hide'); D.mainView.classList.add('ph-hide'); }
-
             const updateUI=()=>{
                 const t=translations[currentLang];
                 D.toggleButton.textContent=t.toggleButton; D.title.textContent=t.panelTitle;
                 D.collapseButton.title=t.collapseTitle;
-                D.settingsButton.title = t.settingsTitle; // 设置按钮的气泡提示
+                D.settingsButton.title = t.settingsTitle;
 
                 // 主视图文本
                 D.labelSelect.textContent=t.selectTemplate; D.newBtn.textContent=t.newBtn;
@@ -643,7 +651,7 @@ USER QUESTION (paste multi-paragraph content between the markers):
                 D.settingsSaveBtn.textContent = t.settingsSave;
                 D.settingsResetBtn.textContent = t.settingsReset;
 
-                // 导入导出按钮文本（现在位于设置页）
+                // 导入导出按钮文本
                 D.importBtn.textContent=t.importBtn; D.exportBtn.textContent=t.exportBtn;
 
                 // 同步数值
@@ -651,7 +659,6 @@ USER QUESTION (paste multi-paragraph content between the markers):
                 D.settingToggleWidthInput.value = uiSettings.toggleWidth;
                 D.settingToggleHeightInput.value = uiSettings.toggleHeight;
 
-                // 刷新下拉
                 populateDropdown();
                 if(prompts[DEFAULT_TEMPLATE_ID]) D.templateSelect.value=DEFAULT_TEMPLATE_ID;
                 displaySelectedPrompt();
@@ -682,12 +689,12 @@ USER QUESTION (paste multi-paragraph content between the markers):
             D.toggleButton.addEventListener('click',()=>D.contentPanel.classList.remove('hidden'));
             D.collapseButton.addEventListener('click',()=>D.contentPanel.classList.add('hidden'));
 
-            // 语言切换（同时刷新两页的文案）
+            // 语言切换
             D.langToggleButton.addEventListener('click',()=>{ currentLang=currentLang==='zh'?'en':'zh'; GM_setValue(LANG_STORE_KEY,currentLang); updateUI(); });
 
-            // 视图切换：设置按钮 / 返回按钮
-            D.settingsButton.addEventListener('click', showSettings);
-            D.backBtn.addEventListener('click', showMain);
+            // 视图切换：设置 / 返回
+            D.settingsButton.addEventListener('click', ()=> D.contentPanel.setAttribute('data-view','settings'));
+            D.backBtn.addEventListener('click', ()=> D.contentPanel.setAttribute('data-view','main'));
 
             // 主视图：模板选择/编辑
             D.templateSelect.addEventListener('change',displaySelectedPrompt);
@@ -795,7 +802,7 @@ USER QUESTION (paste multi-paragraph content between the markers):
                 reader.readAsText(file,'utf-8');
             });
 
-            // 提交到站点输入框（原逻辑保持不变）
+            // 提交到站点输入框（保持原逻辑）
             D.submitBtn.addEventListener('click',()=>{
                 const finalPrompt=generateFinalPrompt(); if(!finalPrompt) return;
                 const inputElement=findInputElement(); if(!inputElement){ alert(translations[currentLang].alertSubmitError); return; }
@@ -986,12 +993,9 @@ USER QUESTION (paste multi-paragraph content between the markers):
                 }
 
                 D.userQuestionTextarea.value='';
-                // 提交后自动收起面板
-                D.contentPanel.classList.add('hidden');
+                D.contentPanel.classList.add('hidden'); // 提交后自动收起
             });
 
-            // 初始：默认展示主视图
-            showMain();
             loadPrompts();
         }
 
