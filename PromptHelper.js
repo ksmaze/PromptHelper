@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         PromptHelper
 // @namespace    http://tampermonkey.net/
-// @version      1.7.2
-// @description  PromptHelper：通用于 ChatGPT, Gemini, Claude, Kimi, DeepSeek, 通义、元宝、Google AI Studio、Grok、豆包 的侧边模板助手；主/设分离；导入/导出；从聊天栏读取并回填；Kimi/Claude 专项处理（覆盖、不重复、换行保真）。站点默认模板（通配符、早保存优先）；“应用默认模板”一键套用站点默认/全局默认；修复并发覆盖（读-改-写）；Helper 按钮蓝色适配黑底站点；夜间模式可切换并持久化。本版：导入/导出升级为“打包”：模板 + 站点规则 + UI 按钮位置信息，向后兼容旧模板-only 文件，按读改写合并、规则追加、UI 即时应用与持久化，确保不影响现有站点填充逻辑。
+// @version      1.7.3
+// @description  PromptHelper：通用于 ChatGPT, Gemini, Claude, Kimi, DeepSeek, 通义、元宝、Google AI Studio、Grok、豆包 的侧边模板助手；主/设分离；导入/导出；从聊天栏读取并回填；Kimi/Claude 专项处理（覆盖、不重复、换行保真）。新增：站点默认模板（通配符、早保存优先）；“应用默认模板”一键套用站点默认/全局默认；修复并发覆盖（读-改-写）；Helper 按钮改蓝色以适配黑底站点。—— 本版：新增夜间模式（黑色系 UI），一键切换并持久化记忆；Claude 换行保真策略保持。—— 改进版：导入/导出增强（同名标准化、冲突策略、可选跳过重复内容、可选整包导入导出、schema/version 兼容、容错更清晰），且不改变默认行为。
 // @author       Sauterne
 // @match        http://chat.openai.com/*
 // @match        https://chat.openai.com/*
@@ -56,8 +56,10 @@
     const THEME_STORE_KEY = 'universal_prompt_helper_theme';
     const DEFAULT_UI = { top: 100, toggleWidth: 120, toggleHeight: 40 };
     const DEFAULT_TEMPLATE_ID = 'default_interactive';
-    const EXPORT_SCHEMA_TEMPLATES = 'prompthelper.templates.v1'; // 兼容旧版
-    const EXPORT_SCHEMA_BUNDLE = 'prompthelper.bundle.v1';       // 新版打包
+
+    // 导入/导出相关：保持原 schema，同时新增 bundle schema（可选）
+    const EXPORT_SCHEMA = 'prompthelper.templates.v1';
+    const EXPORT_BUNDLE_SCHEMA = 'prompthelper.bundle.v1';
     const IMPORT_SUFFIX_BASE = ' (imported)';
 
     function loadUISettings(){
@@ -86,6 +88,36 @@
     }
     function saveTheme(t){
         GM_setValue(THEME_STORE_KEY, (t==='dark')?'dark':'light');
+    }
+
+    // —— 新增：名称标准化/哈希/冲突辅助 —— //
+    function normalizeName(name){ return String(name||'').trim(); }
+    function normalizeKey(name){ return normalizeName(name).toLowerCase(); }
+    function djb2Hash(str){
+        // 简单稳定哈希：只用于“完全相同内容”的快速判断
+        str = String(str||'');
+        let hash = 5381;
+        for(let i=0;i<str.length;i++){ hash = ((hash << 5) + hash) + str.charCodeAt(i); hash |= 0; }
+        // 转无符号十六进制字符串
+        return (hash >>> 0).toString(16);
+    }
+    function ensureUniqueName(baseName, existingSet){
+        if(!existingSet.has(baseName)) return baseName;
+        let candidate = `${baseName}${IMPORT_SUFFIX_BASE}`;
+        if(!existingSet.has(candidate)) return candidate;
+        let i=2;
+        while(existingSet.has(`${baseName}${IMPORT_SUFFIX_BASE} ${i}`)) i++;
+        return `${baseName}${IMPORT_SUFFIX_BASE} ${i}`;
+    }
+    // 用“标准化集合”判断唯一性的重命名（不改变原 ensureUniqueName 在其他处的既有行为）
+    function ensureUniqueNameNormalized(baseName, normalizedSet){
+        let candidate = baseName;
+        let idx = 1;
+        while(normalizedSet.has(normalizeKey(candidate))){
+            idx++;
+            candidate = (idx===2) ? `${baseName}${IMPORT_SUFFIX_BASE}` : `${baseName}${IMPORT_SUFFIX_BASE} ${idx-1}`;
+        }
+        return candidate;
     }
 
     // 强制 open shadow
@@ -210,8 +242,7 @@ FINAL OUTPUT FORMAT（九段固定）：
 3) 来源与证据表（Sources Table）
 4) 去伪存真记录（Exclusion Log）
 5) 已确认事实清单（全部带 [S#]）
-6) 逻辑论证链（逐步推导，步步有 [S#]）
-7) 结论（最准确答案 + 置信度/范围）
+6) 结论（最准确答案 + 置信度/范围）
 8) 局限与更新触发条件
 9) 参考文献（按 [S#] 列完整引文，含链接与访问日期）
 
@@ -246,7 +277,7 @@ USER QUESTION (paste multi-paragraph content between the markers):
                 alertExportEmpty:"没有可导出的模板（默认模板不导出）。",
                 alertExportDone:"模板已导出为文件：",
                 alertImportInvalid:"导入失败：文件格式无效或为空。",
-                alertImportDone:(added,renamed)=>`成功导入 ${added} 个模板（其中 ${renamed} 个已重命名避免重名）。`,
+                alertImportDone:(added,renamed)=>`成功导入 ${added} 个模板（其中 ${renamed} 个已重命名）。`,
                 quickApplyBtn:"应用默认模板",
                 siteDefaultsTitle:"站点默认模板",
                 siteDefaultsList:"已保存规则",
@@ -290,11 +321,6 @@ USER QUESTION (paste multi-paragraph content between the markers):
                 sitePattern:"Domain / Wildcard",
                 siteTemplate:"Bound Template",
                 siteNewBtn:"New Rule", siteSaveBtn:"Save Rule", siteDeleteBtn:"Delete Rule",
-                alertSitePatternRequired:"Please enter a domain/wildcard (e.g. *.example.com, kimi.*).",
-                alertSiteTemplateRequired:"Please choose a template to bind.",
-                alertSiteSelectFirst:"Please select a rule first.",
-                alertSiteSaved:"Rule saved!",
-                alertSiteDeleted:"Rule deleted!",
                 themeToggleLightTitle:"Toggle dark mode",
                 themeToggleDarkTitle:"Toggle light mode"
             }
@@ -376,7 +402,7 @@ USER QUESTION (paste multi-paragraph content between the markers):
                     border-radius: 8px !important;
                     box-shadow: -2px 2px 10px rgba(0,0,0,0.1) !important;
                     padding: 14px !important;
-                    display: flex !重要;
+                    display: flex !important;
                     flex-direction: column !important;
                     gap: 10px !important;
                     transition: transform 0.3s ease-in-out, opacity 0.3s ease-in-out !important;
@@ -389,7 +415,7 @@ USER QUESTION (paste multi-paragraph content between the markers):
                     padding-bottom: 14px !important;
                 }
                 #prompt-helper-content.hidden { transform: translateX(100%) !important; opacity: 0 !important; pointer-events: none !important; }
-                #prompt-helper-content h3 { padding: 0 !important; font-size: 18px !important; color: var(--ph-header-text) !重要; text-align: center !important; font-weight: bold !important; }
+                #prompt-helper-content h3 { padding: 0 !important; font-size: 18px !important; color: var(--ph-header-text) !important; text-align: center !important; font-weight: bold !important; }
 
                 /* 主/设双页互斥 */
                 #prompt-helper-content[data-view="main"]    #ph-settings-view { display: none !important; }
@@ -568,7 +594,123 @@ USER QUESTION (paste multi-paragraph content between the markers):
             }
         }
 
-        // —— 导出/导入相关工具（新增打包 schema + 兼容旧文件） ——
+        function buildUI(){
+            const create=(tag,id,classes=[],attributes={},children=[])=>{
+                const el=document.createElement(tag);
+                if(id)el.id=id; if(classes.length)el.classList.add(...classes);
+                for(const k in attributes)el.setAttribute(k,attributes[k]);
+                for(const c of children)el.appendChild(c);
+                return el;
+            };
+            const D={};
+            const container=create('div','prompt-helper-container');
+
+            D.toggleButton=create('button','prompt-helper-toggle');
+            D.quickApplyButton=document.createElement('button');
+            D.quickApplyButton.id='prompt-helper-quickapply';
+
+            D.contentPanel=create('div','prompt-helper-content',['hidden']);
+            D.contentPanel.setAttribute('data-view','main');
+
+            // 头部
+            D.langToggleButton=create('button','ph-lang-toggle',[],{},[document.createTextNode('中/En')]);
+            D.title=document.createElement('h3'); D.title.id='ph-title';
+
+            D.themeButton=document.createElement('button'); D.themeButton.id='ph-theme-btn';
+            D.settingsButton=document.createElement('button'); D.settingsButton.id='ph-settings-btn';
+            D.settingsButton.appendChild(document.createTextNode('⚙️'));
+
+            D.collapseButton=create('button','ph-collapse-btn',[],{id:'ph-collapse-btn'},[document.createTextNode('\u00d7')]);
+
+            // 右侧按钮排列：主题切换 → 设置 → 关闭
+            const rightBox=create('div',null,['ph-header-right'],{},[D.themeButton, D.settingsButton, D.collapseButton]);
+            const header=create('div','ph-header',['ph-header'],{},[D.langToggleButton,D.title,rightBox]);
+
+            // 主视图
+            D.labelSelect=create('label','ph-label-select',[],{for:'ph-template-select'});
+            D.templateSelect=create('select','ph-template-select');
+            D.newBtn=create('button','ph-new-btn',['ph-btn-primary']);
+            D.saveBtn=create('button','ph-save-btn',['ph-btn-success']);
+            D.deleteBtn=create('button','ph-delete-btn',['ph-btn-danger']);
+            const section1=create('div',null,['ph-section'],{},[
+                D.labelSelect,D.templateSelect,
+                create('div',null,['ph-button-group'],{},[D.newBtn,D.saveBtn,D.deleteBtn])
+            ]);
+            D.labelName=create('label','ph-label-name',[],{for:'ph-template-name'});
+            D.templateNameInput=create('input','ph-template-name',[],{type:'text'});
+            D.labelContent=create('label','ph-label-content',[],{for:'ph-template-body'});
+            D.templateBodyTextarea=create('textarea','ph-template-body');
+            const section2=create('div',null,['ph-section'],{},[
+                D.labelName,D.templateNameInput,D.labelContent,D.templateBodyTextarea
+            ]);
+            D.copyBtn=create('button','ph-copy-btn',['ph-btn-secondary']);
+            D.submitBtn=create('button','ph-submit-btn',['ph-btn-primary']);
+            const sectionActions=create('div',null,['ph-section'],{},[
+                create('div',null,['ph-button-group'],{},[D.copyBtn,D.submitBtn])
+            ]);
+            D.mainView = create('div','ph-main-view',[],{},[section1,section2,sectionActions]);
+
+            // 设置视图 —— 基础
+            D.importBtn=create('button','ph-import-btn',['ph-btn-secondary']);
+            D.exportBtn=create('button','ph-export-btn',['ph-btn-secondary']);
+            D.importFileInput=create('input','ph-import-file',[],{type:'file',accept:'.json,application/json',style:'display:none'});
+            const sectionIO=create('div',null,['ph-section'],{},[
+                create('div',null,['ph-button-group'],{},[D.importBtn,D.exportBtn]),
+                D.importFileInput
+            ]);
+            D.settingsTitleEl = document.createElement('h4');
+            D.settingsTitleEl.id='ph-settings-title';
+            D.settingTopLabel = document.createElement('label'); D.settingTopLabel.htmlFor='ph-setting-top';
+            D.settingTopInput = document.createElement('input'); D.settingTopInput.id='ph-setting-top'; D.settingTopInput.type='number'; D.settingTopInput.min='0'; D.settingTopInput.step='1';
+            D.settingToggleWidthLabel = document.createElement('label'); D.settingToggleWidthLabel.htmlFor='ph-setting-toggle-width';
+            D.settingToggleWidthInput = document.createElement('input'); D.settingToggleWidthInput.id='ph-setting-toggle-width'; D.settingToggleWidthInput.type='number'; D.settingToggleWidthInput.min='40'; D.settingToggleWidthInput.step='1';
+            D.settingToggleHeightLabel = document.createElement('label'); D.settingToggleHeightLabel.htmlFor='ph-setting-toggle-height';
+            D.settingToggleHeightInput = document.createElement('input'); D.settingToggleHeightInput.id='ph-setting-toggle-height'; D.settingToggleHeightInput.type='number'; D.settingToggleHeightInput.min='24'; D.settingToggleHeightInput.step='1';
+            D.settingsSaveBtn = create('button','ph-settings-save',['ph-btn-success']);
+            D.settingsResetBtn = create('button','ph-settings-reset',['ph-btn-secondary']);
+            const settingsGrid = create('div','ph-settings-grid',['ph-grid'],{},[
+                D.settingTopLabel, D.settingTopInput,
+                D.settingToggleWidthLabel, D.settingToggleWidthInput,
+                D.settingToggleHeightLabel, D.settingToggleHeightInput
+            ]);
+            const settingsButtons = create('div',null,['ph-button-group'],{},[D.settingsSaveBtn, D.settingsResetBtn]);
+
+            // 设置视图 —— 站点默认模板
+            D.siteTitle = document.createElement('h4'); D.siteTitle.id='ph-site-title';
+            D.siteListLabel = document.createElement('label'); D.siteListLabel.htmlFor='ph-site-list';
+            D.siteList = document.createElement('select'); D.siteList.id='ph-site-list';
+            D.siteNewBtn = create('button','ph-site-new',['ph-btn-primary']);
+            D.siteSaveBtn = create('button','ph-site-save',['ph-btn-success']);
+            D.siteDeleteBtn = create('button','ph-site-del',['ph-btn-danger']);
+            const siteListRow = create('div',null,['ph-section'],{},[
+                D.siteListLabel, D.siteList,
+                create('div',null,['ph-button-group'],{},[D.siteNewBtn, D.siteSaveBtn, D.siteDeleteBtn])
+            ]);
+            D.sitePatternLabel = document.createElement('label'); D.sitePatternLabel.htmlFor='ph-site-pattern';
+            D.sitePatternInput = document.createElement('input'); D.sitePatternInput.id='ph-site-pattern'; D.sitePatternInput.type='text'; D.sitePatternInput.placeholder='e.g. *.example.com';
+            D.siteTplLabel = document.createElement('label'); D.siteTplLabel.htmlFor='ph-site-tpl';
+            D.siteTplSelect = document.createElement('select'); D.siteTplSelect.id='ph-site-tpl';
+            const siteEditGrid = create('div','ph-site-grid',['ph-grid'],{},[
+                D.sitePatternLabel, D.sitePatternInput,
+                D.siteTplLabel, D.siteTplSelect
+            ]);
+
+            D.backBtn = create('button','ph-back-btn',['ph-btn-secondary'],{},[document.createTextNode('←')]);
+
+            D.settingsView = document.createElement('div'); D.settingsView.id='ph-settings-view';
+            D.settingsView.append(
+                D.backBtn,
+                D.siteTitle, siteListRow, siteEditGrid,
+                D.settingsTitleEl, settingsGrid, settingsButtons,
+                sectionIO
+            );
+
+            D.contentPanel.append(header, D.mainView, D.settingsView);
+            const containerNodes = [D.toggleButton, D.quickApplyButton, D.contentPanel];
+            container.append(...containerNodes);
+            return {container,elements:D};
+        }
+
         function nowStamp(){
             const d=new Date(); const p=n=>String(n).padStart(2,'0');
             return `${d.getFullYear()}${p(d.getMonth()+1)}${p(d.getDate())}_${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}`;
@@ -580,13 +722,9 @@ USER QUESTION (paste multi-paragraph content between the markers):
             a.href=url; a.download=filename; document.body.appendChild(a); a.click();
             setTimeout(()=>{URL.revokeObjectURL(url); a.remove();},0);
         }
-        function ensureUniqueName(baseName, existingSet){
-            if(!existingSet.has(baseName)) return baseName;
-            let candidate = `${baseName}${IMPORT_SUFFIX_BASE}`;
-            if(!existingSet.has(candidate)) return candidate;
-            let i=2;
-            while(existingSet.has(`${baseName}${IMPORT_SUFFIX_BASE} ${i}`)) i++;
-            return `${baseName}${IMPORT_SUFFIX_BASE} ${i}`;
+        function ensureUniqueNameLegacy(baseName, existingSet){
+            // 兼容旧实现（保留原函数名 ensureUniqueName）在别处可能被使用
+            return ensureUniqueName(baseName, existingSet);
         }
         function genId(prefix='id'){ return `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2,8)}`; }
         function normalizeImportedList(parsed){
@@ -599,139 +737,10 @@ USER QUESTION (paste multi-paragraph content between the markers):
             }
             return [];
         }
-        function isBundlePayload(obj){
-            if(!obj || typeof obj!=='object') return false;
-            if(obj.schema === EXPORT_SCHEMA_BUNDLE) return true;
-            const data = obj.data;
-            if(data && typeof data==='object' && (Array.isArray(data.templates) || Array.isArray(data.siteDefaults) || typeof data.uiSettings==='object')) return true;
-            return false;
-        }
-        function buildExportBundlePayload(){
-            // 最新模板（含默认补齐）
-            let latestPrompts = {};
-            const s=GM_getValue(PROMPTS_STORE_KEY,null);
-            if(s){ try{ latestPrompts=JSON.parse(s)||{}; }catch{ latestPrompts={}; } }
-            if(!latestPrompts[DEFAULT_TEMPLATE_ID]) latestPrompts[DEFAULT_TEMPLATE_ID]=defaultPrompts[DEFAULT_TEMPLATE_ID];
-
-            // 导出非默认模板（保持既有行为）
-            const templates = [];
-            for(const id in latestPrompts){
-                if(id===DEFAULT_TEMPLATE_ID) continue;
-                const name=(latestPrompts[id]?.name||'').trim();
-                const template=(latestPrompts[id]?.template||'').trim();
-                if(name && template) templates.push({ name, template });
-            }
-
-            // 最新站点规则
-            const rules = loadSiteDefaults().map(r=>{
-                const tplName = latestPrompts[r.templateId]?.name || '';
-                return {
-                    pattern: r.pattern || '',
-                    templateName: tplName || null,  // 以模板名为主，以便导入后重新映射新 id
-                    templateId: r.templateId || null, // 兼容字段（辅助）
-                    createdAt: r.createdAt || null
-                };
-            });
-
-            // UI 设置
-            const ui = loadUISettings();
-
-            return {
-                app: 'PromptHelper',
-                schema: EXPORT_SCHEMA_BUNDLE,
-                version: 1,
-                exportedAt: new Date().toISOString(),
-                data: {
-                    templates,
-                    siteDefaults: rules,
-                    uiSettings: { top: ui.top, toggleWidth: ui.toggleWidth, toggleHeight: ui.toggleHeight }
-                }
-            };
-        }
-        function importBundleObject(payload, i18n){
-            // 解析 data 节点
-            const data = payload.data || {};
-            const incomingTemplates = Array.isArray(data.templates) ? data.templates : [];
-            const incomingRules = Array.isArray(data.siteDefaults) ? data.siteDefaults : [];
-            const incomingUI = (data.uiSettings && typeof data.uiSettings==='object') ? data.uiSettings : null;
-
-            // —— 1) 导入模板（读-改-写 + 重名处理） ——
-            let latest=(function(){ let l={}; const s=GM_getValue(PROMPTS_STORE_KEY,null); if(s){ try{ l=JSON.parse(s)||{}; }catch{ l={}; } } if(!l[DEFAULT_TEMPLATE_ID]) l[DEFAULT_TEMPLATE_ID]=defaultPrompts[DEFAULT_TEMPLATE_ID]; return l; })();
-            const existingNames=new Set(Object.values(latest).map(p=>p.name));
-            let added=0, renamed=0;
-
-            // name -> newId 映射（用于规则重映射）
-            const nameToNewId = {};
-
-            for(const item of incomingTemplates){
-                if(!item) continue;
-                const name=String(item.name||'').trim();
-                const body=String(item.template||'').trim();
-                if(!name || !body) continue;
-                let finalName=name;
-                if(existingNames.has(finalName)){ finalName=ensureUniqueName(name, existingNames); if(finalName!==name) renamed++; }
-                const id=genId('prompt');
-                latest[id]={name:finalName, template:body};
-                existingNames.add(finalName);
-                nameToNewId[name] = id;          // 原名 → 新 id
-                nameToNewId[finalName] = id;     // 处理重命名后的名也指向新 id
-                added++;
-            }
-            GM_setValue(PROMPTS_STORE_KEY, JSON.stringify(latest));
-            // 刷到内存对象
-            let promptsLatest = {};
-            try{ promptsLatest = JSON.parse(GM_getValue(PROMPTS_STORE_KEY,null)) || latest; }catch{ promptsLatest = latest; }
-
-            // —— 2) 导入站点规则（追加，不覆盖；模板 id 重新解析） ——
-            let rulesLatest = loadSiteDefaults();
-            let rulesAdded = 0;
-
-            function resolveTemplateIdForRule(rule){
-                // 优先：以模板名映射到刚导入的新 id
-                const byName = (rule && rule.templateName) ? nameToNewId[rule.templateName] : null;
-                if(byName && promptsLatest[byName]) return byName;
-                // 次选：当前库中存在同名模板
-                if(rule && rule.templateName){
-                    const foundId = Object.keys(promptsLatest).find(id => promptsLatest[id]?.name === rule.templateName);
-                    if(foundId) return foundId;
-                }
-                // 兼容字段：原 templateId 还存在且有效
-                if(rule && rule.templateId && promptsLatest[rule.templateId]) return rule.templateId;
-                // 兜底：默认模板
-                return DEFAULT_TEMPLATE_ID;
-            }
-
-            for(const r of incomingRules){
-                if(!r || !r.pattern) continue;
-                const resolvedId = resolveTemplateIdForRule(r);
-                rulesLatest.push({
-                    id: genId('map'),
-                    pattern: String(r.pattern||'').trim(),
-                    templateId: resolvedId,
-                    createdAt: r.createdAt || Date.now()
-                });
-                rulesAdded++;
-            }
-            saveSiteDefaults(rulesLatest);
-            siteDefaults = loadSiteDefaults();
-
-            // —— 3) 导入 UI 设置（存在则立即应用并持久化） ——
-            let uiApplied = false;
-            if(incomingUI && (typeof incomingUI.top==='number' || typeof incomingUI.toggleWidth==='number' || typeof incomingUI.toggleHeight==='number')){
-                const top = Number.isFinite(incomingUI.top) ? Math.max(0, incomingUI.top|0) : uiSettings.top;
-                const tw  = Number.isFinite(incomingUI.toggleWidth) ? Math.max(40, incomingUI.toggleWidth|0) : uiSettings.toggleWidth;
-                const th  = Number.isFinite(incomingUI.toggleHeight) ? Math.max(24, incomingUI.toggleHeight|0) : uiSettings.toggleHeight;
-                uiSettings = { top, toggleWidth: tw, toggleHeight: th };
-                saveUISettings(uiSettings);
-                applyUISettings(document.getElementById('prompt-helper-container'));
-                uiApplied = true;
-            }
-
-            return { added, renamed, rulesAdded, uiApplied };
-        }
-
         function getCurrentSiteConfig(){ const hostname=window.location.hostname; for(const key in siteConfigs){ if(hostname.includes(key)) return siteConfigs[key]; } return null; }
-        function resolveEditableTargetWrapper(el){ return resolveEditableTarget(el); }
+        function resolveEditableTargetWrapper(el){ // wrapper for findInputElement
+            return resolveEditableTarget(el);
+        }
         function findInputElement(){
             const siteConfig=getCurrentSiteConfig(); if(!siteConfig){return null;}
             let inputElement=null;
@@ -793,8 +802,8 @@ USER QUESTION (paste multi-paragraph content between the markers):
                     inputElement.focus(); inputElement.value=''; inputElement.value=finalPrompt;
                     try{ Object.defineProperty(inputElement,'value',{value:finalPrompt,writable:true,configurable:true}); }catch(_){}
                     [ new Event('focus',{bubbles:true}),
-                      tryCreateInputEvent('beforeinput',{bubbles:true,cancelable:true,data:finalPrompt,inputType:'insertText'}),
-                      tryCreateInputEvent('input',{bubbles:true,cancelable:true,data:finalPrompt,inputType:'insertText'}),
+                      tryCreateInputEvent('beforeinput',{bubbles:true,cancelable:true,inputType:'insertText',data:finalPrompt}),
+                      tryCreateInputEvent('input',{bubbles:true,cancelable:true,inputType:'insertText',data:finalPrompt}),
                       new Event('change',{bubbles:true}),
                       tryCreateKeyboardEvent('keydown',{bubbles:true,key:'a'}),
                       tryCreateKeyboardEvent('keyup',{bubbles:true,key:'a'}),
@@ -935,122 +944,6 @@ USER QUESTION (paste multi-paragraph content between the markers):
             const inputEl = findInputElement(); if(!inputEl) return {error:'no_input'};
             const userTyped = getTextFromEditable(inputEl); if(!userTyped) return {error:'no_user_input'};
             return { inputEl, final: templateStr.replace('{User Question}', userTyped) };
-        }
-
-        function buildUI(){
-            const create=(tag,id,classes=[],attributes={},children=[])=>{
-                const el=document.createElement(tag);
-                if(id)el.id=id; if(classes.length)el.classList.add(...classes);
-                for(const k in attributes)el.setAttribute(k,attributes[k]);
-                for(const c of children)el.appendChild(c);
-                return el;
-            };
-            const D={};
-            const container=create('div','prompt-helper-container');
-
-            D.toggleButton=create('button','prompt-helper-toggle');
-            D.quickApplyButton=document.createElement('button');
-            D.quickApplyButton.id='prompt-helper-quickapply';
-
-            D.contentPanel=create('div','prompt-helper-content',['hidden']);
-            D.contentPanel.setAttribute('data-view','main');
-
-            // 头部
-            D.langToggleButton=create('button','ph-lang-toggle',[],{},[document.createTextNode('中/En')]);
-            D.title=document.createElement('h3'); D.title.id='ph-title';
-
-            D.themeButton=document.createElement('button'); D.themeButton.id='ph-theme-btn';
-            D.settingsButton=document.createElement('button'); D.settingsButton.id='ph-settings-btn';
-            D.settingsButton.appendChild(document.createTextNode('⚙️'));
-
-            D.collapseButton=create('button','ph-collapse-btn',[],{id:'ph-collapse-btn'},[document.createTextNode('\u00d7')]);
-
-            const rightBox=create('div',null,['ph-header-right'],{},[D.themeButton, D.settingsButton, D.collapseButton]);
-            const header=create('div','ph-header',['ph-header'],{},[D.langToggleButton,D.title,rightBox]);
-
-            // 主视图
-            D.labelSelect=create('label','ph-label-select',[],{for:'ph-template-select'});
-            D.templateSelect=create('select','ph-template-select');
-            D.newBtn=create('button','ph-new-btn',['ph-btn-primary']);
-            D.saveBtn=create('button','ph-save-btn',['ph-btn-success']);
-            D.deleteBtn=create('button','ph-delete-btn',['ph-btn-danger']);
-            const section1=create('div',null,['ph-section'],{},[
-                D.labelSelect,D.templateSelect,
-                create('div',null,['ph-button-group'],{},[D.newBtn,D.saveBtn,D.deleteBtn])
-            ]);
-            D.labelName=create('label','ph-label-name',[],{for:'ph-template-name'});
-            D.templateNameInput=create('input','ph-template-name',[],{type:'text'});
-            D.labelContent=create('label','ph-label-content',[],{for:'ph-template-body'});
-            D.templateBodyTextarea=create('textarea','ph-template-body');
-            const section2=create('div',null,['ph-section'],{},[
-                D.labelName,D.templateNameInput,D.labelContent,D.templateBodyTextarea
-            ]);
-            D.copyBtn=create('button','ph-copy-btn',['ph-btn-secondary']);
-            D.submitBtn=create('button','ph-submit-btn',['ph-btn-primary']);
-            const sectionActions=create('div',null,['ph-section'],{},[
-                create('div',null,['ph-button-group'],{},[D.copyBtn,D.submitBtn])
-            ]);
-            D.mainView = create('div','ph-main-view',[],{},[section1,section2,sectionActions]);
-
-            // 设置视图 —— 基础
-            D.importBtn=create('button','ph-import-btn',['ph-btn-secondary']);
-            D.exportBtn=create('button','ph-export-btn',['ph-btn-secondary']);
-            D.importFileInput=create('input','ph-import-file',[],{type:'file',accept:'.json,application/json',style:'display:none'});
-            const sectionIO=create('div',null,['ph-section'],{},[
-                create('div',null,['ph-button-group'],{},[D.importBtn,D.exportBtn]),
-                D.importFileInput
-            ]);
-            D.settingsTitleEl = document.createElement('h4');
-            D.settingsTitleEl.id='ph-settings-title';
-            D.settingTopLabel = document.createElement('label'); D.settingTopLabel.htmlFor='ph-setting-top';
-            D.settingTopInput = document.createElement('input'); D.settingTopInput.id='ph-setting-top'; D.settingTopInput.type='number'; D.settingTopInput.min='0'; D.settingTopInput.step='1';
-            D.settingToggleWidthLabel = document.createElement('label'); D.settingToggleWidthLabel.htmlFor='ph-setting-toggle-width';
-            D.settingToggleWidthInput = document.createElement('input'); D.settingToggleWidthInput.id='ph-setting-toggle-width'; D.settingToggleWidthInput.type='number'; D.settingToggleWidthInput.min='40'; D.settingToggleWidthInput.step='1';
-            D.settingToggleHeightLabel = document.createElement('label'); D.settingToggleHeightLabel.htmlFor='ph-setting-toggle-height';
-            D.settingToggleHeightInput = document.createElement('input'); D.settingToggleHeightInput.id='ph-setting-toggle-height'; D.settingToggleHeightInput.type='number'; D.settingToggleHeightInput.min='24'; D.settingToggleHeightInput.step='1';
-            D.settingsSaveBtn = create('button','ph-settings-save',['ph-btn-success']);
-            D.settingsResetBtn = create('button','ph-settings-reset',['ph-btn-secondary']);
-            const settingsGrid = create('div','ph-settings-grid',['ph-grid'],{},[
-                D.settingTopLabel, D.settingTopInput,
-                D.settingToggleWidthLabel, D.settingToggleWidthInput,
-                D.settingToggleHeightLabel, D.settingToggleHeightInput
-            ]);
-            const settingsButtons = create('div',null,['ph-button-group'],{},[D.settingsSaveBtn, D.settingsResetBtn]);
-
-            // 设置视图 —— 站点默认模板
-            D.siteTitle = document.createElement('h4'); D.siteTitle.id='ph-site-title';
-            D.siteListLabel = document.createElement('label'); D.siteListLabel.htmlFor='ph-site-list';
-            D.siteList = document.createElement('select'); D.siteList.id='ph-site-list';
-            D.siteNewBtn = create('button','ph-site-new',['ph-btn-primary']);
-            D.siteSaveBtn = create('button','ph-site-save',['ph-btn-success']);
-            D.siteDeleteBtn = create('button','ph-site-del',['ph-btn-danger']);
-            const siteListRow = create('div',null,['ph-section'],{},[
-                D.siteListLabel, D.siteList,
-                create('div',null,['ph-button-group'],{},[D.siteNewBtn, D.siteSaveBtn, D.siteDeleteBtn])
-            ]);
-            D.sitePatternLabel = document.createElement('label'); D.sitePatternLabel.htmlFor='ph-site-pattern';
-            D.sitePatternInput = document.createElement('input'); D.sitePatternInput.id='ph-site-pattern'; D.sitePatternInput.type='text'; D.sitePatternInput.placeholder='e.g. *.example.com';
-            D.siteTplLabel = document.createElement('label'); D.siteTplLabel.htmlFor='ph-site-tpl';
-            D.siteTplSelect = document.createElement('select'); D.siteTplSelect.id='ph-site-tpl';
-            const siteEditGrid = create('div','ph-site-grid',['ph-grid'],{},[
-                D.sitePatternLabel, D.sitePatternInput,
-                D.siteTplLabel, D.siteTplSelect
-            ]);
-
-            D.backBtn = create('button','ph-back-btn',['ph-btn-secondary'],{},[document.createTextNode('←')]);
-
-            D.settingsView = document.createElement('div'); D.settingsView.id='ph-settings-view';
-            D.settingsView.append(
-                D.backBtn,
-                D.siteTitle, siteListRow, siteEditGrid,
-                D.settingsTitleEl, settingsGrid, settingsButtons,
-                sectionIO
-            );
-
-            D.contentPanel.append(header, D.mainView, D.settingsView);
-            const containerNodes = [D.toggleButton, D.quickApplyButton, D.contentPanel];
-            container.append(...containerNodes);
-            return {container,elements:D};
         }
 
         function buildAndInit(){
@@ -1212,6 +1105,7 @@ USER QUESTION (paste multi-paragraph content between the markers):
                 D.settingToggleWidthInput.value = uiSettings.toggleWidth;
                 D.settingToggleHeightInput.value = uiSettings.toggleHeight;
 
+                // 应用主题到容器
                 document.getElementById('prompt-helper-container')?.setAttribute('data-theme', currentTheme);
             };
 
@@ -1242,8 +1136,8 @@ USER QUESTION (paste multi-paragraph content between the markers):
                 D.deleteBtn.disabled=true;
             });
             D.saveBtn.addEventListener('click',()=>{
-                const name=D.templateNameInput.value.trim();
-                const templateText=D.templateBodyTextarea.value.trim();
+                const name=normalizeName(D.templateNameInput.value);
+                const templateText=normalizeName(D.templateBodyTextarea.value);
                 if(!name||!templateText){ alert(translations[currentLang].alertSaveError); return; }
                 let latest = (function(){
                     let l={}; const s=GM_getValue(PROMPTS_STORE_KEY,null); if(s){ try{ l=JSON.parse(s)||{}; }catch{ l={}; } }
@@ -1252,7 +1146,13 @@ USER QUESTION (paste multi-paragraph content between the markers):
                 })();
                 let id = D.templateSelect.value || `prompt_${Date.now()}`;
                 latest[id] = { name, template: templateText };
-                GM_setValue(PROMPTS_STORE_KEY, JSON.stringify(latest));
+                try{
+                    GM_setValue(PROMPTS_STORE_KEY, JSON.stringify(latest));
+                }catch(e){
+                    alert('保存失败：可能超出存储配额或序列化失败。\n' + (e&&e.message?e.message:String(e)));
+                    return;
+                }
+                // 刷到内存并刷新 UI
                 const saved=GM_getValue(PROMPTS_STORE_KEY,null);
                 try{ prompts = JSON.parse(saved)||{}; }catch{ prompts = latest; }
                 updateUI();
@@ -1267,7 +1167,12 @@ USER QUESTION (paste multi-paragraph content between the markers):
                     let latest = (function(){ let l={}; const s=GM_getValue(PROMPTS_STORE_KEY,null); if(s){ try{ l=JSON.parse(s)||{}; }catch{ l={}; } } return l; })();
                     delete latest[id];
                     if(!latest[DEFAULT_TEMPLATE_ID]) latest[DEFAULT_TEMPLATE_ID]=defaultPrompts[DEFAULT_TEMPLATE_ID];
-                    GM_setValue(PROMPTS_STORE_KEY, JSON.stringify(latest));
+                    try{
+                        GM_setValue(PROMPTS_STORE_KEY, JSON.stringify(latest));
+                    }catch(e){
+                        alert('删除失败：' + (e&&e.message?e.message:String(e)));
+                        return;
+                    }
                     const saved=GM_getValue(PROMPTS_STORE_KEY,null);
                     try{ prompts = JSON.parse(saved)||{}; }catch{ prompts = latest; }
                     updateUI();
@@ -1307,22 +1212,50 @@ USER QUESTION (paste multi-paragraph content between the markers):
                 applyUISettings(document.getElementById('prompt-helper-container'));
             });
 
-            // 导出（升级为“打包导出”，兼容旧 UI 文案）
+            // —— 导出（增强：可选包含默认模板 & 可选整包导出） —— //
             D.exportBtn.addEventListener('click',()=>{
-                // 若没有任何非默认模板，仍给出与旧版相同的“没有可导出的模板”提示
                 let latest=(function(){ let l={}; const s=GM_getValue(PROMPTS_STORE_KEY,null); if(s){ try{ l=JSON.parse(s)||{}; }catch{ l={}; } } if(!l[DEFAULT_TEMPLATE_ID]) l[DEFAULT_TEMPLATE_ID]=defaultPrompts[DEFAULT_TEMPLATE_ID]; return l; })();
-                const hasNonDefault = Object.keys(latest).some(id => id!==DEFAULT_TEMPLATE_ID && (latest[id]?.name||'').trim() && (latest[id]?.template||'').trim());
-                if(!hasNonDefault){
-                    alert(translations[currentLang].alertExportEmpty);
-                    return;
+                const includeDefault = !!window.confirm('导出时是否“包含默认模板”？\n（建议否，保持与旧版一致）');
+                const exportBundle = !!window.confirm('是否导出“整包配置”（站点规则 + UI 设置 + 主题/语言）？\n（取消=仅导出模板）');
+
+                const list=[];
+                for(const id in latest){
+                    if(!includeDefault && id===DEFAULT_TEMPLATE_ID) continue;
+                    const name=normalizeName(latest[id]?.name||'');
+                    const template=normalizeName(latest[id]?.template||'');
+                    if(name && template) list.push({name,template});
                 }
-                const payload = buildExportBundlePayload();
-                const filename=`prompthelper-backup-${nowStamp()}.json`;
+                if(!list.length){ alert(translations[currentLang].alertExportEmpty); return; }
+
+                let payload, filename;
+                if(exportBundle){
+                    // 站点规则按“模板名”导出，避免 id 失配
+                    const siteRules = loadSiteDefaults();
+                    const siteDefaultsByName = siteRules.map(r => ({
+                        pattern: r.pattern,
+                        templateName: latest[r.templateId]?.name || null
+                    }));
+                    payload = {
+                        app:'PromptHelper',
+                        schema:EXPORT_BUNDLE_SCHEMA,
+                        version:1,
+                        exportedAt:new Date().toISOString(),
+                        templates:list,
+                        siteDefaultsByName,
+                        uiSettings: loadUISettings(),
+                        theme: loadTheme(),
+                        lang: GM_getValue(LANG_STORE_KEY,'zh')
+                    };
+                    filename=`prompthelper-bundle-${nowStamp()}.json`;
+                }else{
+                    payload={ app:'PromptHelper', schema:EXPORT_SCHEMA, version:1, exportedAt:new Date().toISOString(), templates:list };
+                    filename=`prompthelper-templates-${nowStamp()}.json`;
+                }
                 downloadJSON(filename, payload);
                 alert(translations[currentLang].alertExportDone + filename);
             });
 
-            // 导入（兼容：bundle & 仅模板）
+            // —— 导入（增强：同名标准化/冲突策略/可选跳过重复/可选整包） —— //
             D.importBtn.addEventListener('click',()=> D.importFileInput.click());
             D.importFileInput.addEventListener('change',(evt)=>{
                 const file=evt.target.files && evt.target.files[0];
@@ -1332,55 +1265,190 @@ USER QUESTION (paste multi-paragraph content between the markers):
                 reader.onload=()=>{
                     try{
                         const text=String(reader.result||'').trim();
-                        if(!text){ alert(translations[currentLang].alertImportInvalid); return; }
-                        let parsed = null;
-                        try{ parsed = JSON.parse(text); }catch(e){ parsed = null; }
+                        const parsed=text?JSON.parse(text):null;
 
-                        // 新版 bundle
-                        if(isBundlePayload(parsed)){
-                            const { added, renamed, rulesAdded, uiApplied } = importBundleObject(parsed, translations[currentLang]);
-                            // 刷新内存与 UI
-                            try{ prompts = JSON.parse(GM_getValue(PROMPTS_STORE_KEY,null)) || prompts; }catch{}
-                            siteDefaults = loadSiteDefaults();
-                            updateUI();
-                            // 统一提示（不新增翻译键，按语言输出）
-                            if(currentLang==='zh'){
-                                alert(`导入完成：模板 ${added} 个（重命名 ${renamed} 个）；规则 ${rulesAdded} 条；${uiApplied?'已应用按钮位置设置。':'无按钮位置设置或未变更。'}`);
-                            }else{
-                                alert(`Import complete: templates ${added} (renamed ${renamed}); rules ${rulesAdded}; ${uiApplied?'UI position applied.':'No UI position provided or unchanged.'}`);
+                        // 判定是否为 bundle
+                        const isBundle = parsed && parsed.schema===EXPORT_BUNDLE_SCHEMA;
+
+                        const arr=normalizeImportedList(parsed);
+                        if(!arr.length){ alert(translations[currentLang].alertImportInvalid); D.importFileInput.value=''; return; }
+
+                        // 读取最新 prompts 与准备集合
+                        let latest=(function(){ let l={}; const s=GM_getValue(PROMPTS_STORE_KEY,null); if(s){ try{ l=JSON.parse(s)||{}; }catch{ l={}; } } if(!l[DEFAULT_TEMPLATE_ID]) l[DEFAULT_TEMPLATE_ID]=defaultPrompts[DEFAULT_TEMPLATE_ID]; return l; })();
+
+                        const existingNameSet = new Set(Object.values(latest).map(p => normalizeName(p?.name||'')));
+                        const existingNormSet = new Set(Object.values(latest).map(p => normalizeKey(p?.name||'')));
+                        const nameToId = {};
+                        for(const id in latest){
+                            const key = normalizeKey(latest[id]?.name||'');
+                            if(key) if(!(key in nameToId)) nameToId[key]=id; // 保留第一个
+                        }
+                        const existingContentHashes = new Set(Object.values(latest).map(p => djb2Hash(p?.template||'')));
+
+                        // 预扫描：是否存在同名冲突、内容重复
+                        let hasNameConflict=false, hasDupContent=false;
+                        const incomingNormNames = new Set();
+                        const incomingContentHashes = new Set();
+                        for(const item of arr){
+                            const nm = normalizeName(item?.name||'');
+                            const key = normalizeKey(nm);
+                            const body = normalizeName(item?.template||'');
+                            const hh = djb2Hash(body);
+                            if(!nm || !body) continue;
+                            if(existingNormSet.has(key)) hasNameConflict=true;
+                            if(existingContentHashes.has(hh)) hasDupContent=true;
+                            // 记录导入集中自身情况（不强制处理导入内部重名：沿用旧逻辑逐条处理）
+                            incomingNormNames.add(key);
+                            incomingContentHashes.add(hh);
+                        }
+
+                        // 仅在确有冲突/重复时询问一次策略；用户取消/乱填则回到“重命名 + 不跳过重复”（旧行为）
+                        let conflictPolicy='rename'; // rename | skip | overwrite
+                        if(hasNameConflict){
+                            const ans = (window.prompt('检测到同名模板。\n选择导入策略：\nR=重命名（默认）  S=跳过  O=覆盖', 'R')||'').trim().toUpperCase();
+                            if(ans==='S') conflictPolicy='skip';
+                            else if(ans==='O') conflictPolicy='overwrite';
+                            else conflictPolicy='rename';
+                        }
+                        let skipDupByContent=false;
+                        if(hasDupContent){
+                            skipDupByContent = !!window.confirm('检测到与现有模板“内容完全相同”的条目。\n是否跳过这些重复内容？\n（取消=不跳过，保持旧行为）');
+                        }
+
+                        // 导入主循环
+                        let added=0, renamed=0, overwritten=0, skippedByName=0, skippedByContent=0;
+                        for(const item of arr){
+                            if(!item) continue;
+                            let name = normalizeName(item.name||'');
+                            let body = normalizeName(item.template||'');
+                            if(!name || !body) continue;
+
+                            const key = normalizeKey(name);
+                            const hh = djb2Hash(body);
+
+                            if(skipDupByContent && existingContentHashes.has(hh)){ skippedByContent++; continue; }
+
+                            if(existingNormSet.has(key)){
+                                if(conflictPolicy==='skip'){ skippedByName++; continue; }
+                                if(conflictPolicy==='overwrite'){
+                                    const targetId = nameToId[key];
+                                    if(targetId && targetId!==DEFAULT_TEMPLATE_ID){
+                                        latest[targetId] = { name: latest[targetId].name, template: body };
+                                        overwritten++;
+                                        existingContentHashes.add(hh);
+                                        continue; // 不新增
+                                    }
+                                    // 保护默认模板：若目标是默认模板，降级为重命名
+                                }
+                                // 重命名策略（默认）
+                                const newName = ensureUniqueNameNormalized(name, existingNormSet);
+                                if(newName!==name) renamed++;
+                                name = newName;
                             }
+
+                            const newId = genId('prompt');
+                            latest[newId] = { name, template: body };
+                            added++;
+                            // 刷新集合
+                            existingNameSet.add(name);
+                            existingNormSet.add(normalizeKey(name));
+                            existingContentHashes.add(hh);
+                            const nk = normalizeKey(name);
+                            if(!(nk in nameToId)) nameToId[nk]=newId;
+                        }
+
+                        // 写回
+                        try{
+                            GM_setValue(PROMPTS_STORE_KEY, JSON.stringify(latest));
+                        }catch(e){
+                            alert('导入失败：保存到本地存储时出错。\n可能是空间不足或序列化失败。\n' + (e&&e.message?e.message:String(e)));
                             D.importFileInput.value='';
                             return;
                         }
 
-                        // 老格式：仅模板
-                        const arr=normalizeImportedList(parsed);
-                        if(!arr.length){ alert(translations[currentLang].alertImportInvalid); return; }
-
-                        let latest=(function(){ let l={}; const s=GM_getValue(PROMPTS_STORE_KEY,null); if(s){ try{ l=JSON.parse(s)||{}; }catch{ l={}; } } if(!l[DEFAULT_TEMPLATE_ID]) l[DEFAULT_TEMPLATE_ID]=defaultPrompts[DEFAULT_TEMPLATE_ID]; return l; })();
-                        const existingNames=new Set(Object.values(latest).map(p=>p.name));
-                        let added=0, renamed=0;
-                        for(const item of arr){
-                            if(!item) continue;
-                            const name=String(item.name||'').trim();
-                            const body=String(item.template||'').trim();
-                            if(!name || !body) continue;
-                            let finalName=name;
-                            if(existingNames.has(finalName)){ finalName=ensureUniqueName(name, existingNames); if(finalName!==name) renamed++; }
-                            const id=genId('prompt');
-                            latest[id]={name:finalName, template:body};
-                            existingNames.add(finalName);
-                            added++;
-                        }
-                        GM_setValue(PROMPTS_STORE_KEY, JSON.stringify(latest));
+                        // 刷新内存与 UI
                         const saved=GM_getValue(PROMPTS_STORE_KEY,null);
                         try{ prompts = JSON.parse(saved)||{}; }catch{ prompts = latest; }
                         updateUI();
-                        alert(translations[currentLang].alertImportDone(added,renamed));
+
+                        // —— 若是 bundle：可选导入站点规则 & 设置 —— //
+                        if(isBundle){
+                            // 站点规则 byName
+                            if(Array.isArray(parsed.siteDefaultsByName) && parsed.siteDefaultsByName.length){
+                                if(window.confirm('检测到“站点默认模板”规则。是否导入这些规则？（按模板名匹配）')){
+                                    // 重新构建 name->id（标准化）映射（考虑刚刚导入的新模板）
+                                    const nameToId2 = {};
+                                    for(const id in prompts){
+                                        const key2 = normalizeKey(prompts[id]?.name||'');
+                                        if(key2 && !(key2 in nameToId2)) nameToId2[key2]=id;
+                                    }
+                                    let rules = loadSiteDefaults();
+                                    let changed=false;
+                                    for(const r of parsed.siteDefaultsByName){
+                                        const pat = normalizeName(r?.pattern||'');
+                                        const tname = normalizeName(r?.templateName||'');
+                                        if(!pat || !tname) continue;
+                                        const tid = nameToId2[normalizeKey(tname)];
+                                        if(!tid) continue; // 未匹配到模板（可能用户没导这条或改名）
+                                        // 避免重复：相同 pattern + templateId
+                                        const exists = rules.some(x => normalizeName(x.pattern)===pat && x.templateId===tid);
+                                        if(exists) continue;
+                                        rules.push({ id: genId('map'), pattern: pat, templateId: tid, createdAt: Date.now() });
+                                        changed=true;
+                                    }
+                                    if(changed){
+                                        try{
+                                            saveSiteDefaults(rules);
+                                            siteDefaults = loadSiteDefaults();
+                                            populateSiteList();
+                                        }catch(e){
+                                            alert('导入站点规则失败：' + (e&&e.message?e.message:String(e)));
+                                        }
+                                    }
+                                }
+                            }
+                            // UI 设置/主题/语言
+                            const wantSettings = (parsed.uiSettings || parsed.theme || parsed.lang) && window.confirm('检测到界面设置（位置/大小）与主题/语言。是否导入这些设置？');
+                            if(wantSettings){
+                                try{
+                                    if(parsed.uiSettings && typeof parsed.uiSettings==='object'){
+                                        const top = Math.max(0, parseInt(parsed.uiSettings.top||DEFAULT_UI.top,10));
+                                        const tw = Math.max(40, parseInt(parsed.uiSettings.toggleWidth||DEFAULT_UI.toggleWidth,10));
+                                        const th = Math.max(24, parseInt(parsed.uiSettings.toggleHeight||DEFAULT_UI.toggleHeight,10));
+                                        uiSettings = { top, toggleWidth: tw, toggleHeight: th };
+                                        saveUISettings(uiSettings);
+                                        applyUISettings(document.getElementById('prompt-helper-container'));
+                                    }
+                                    if(parsed.theme && (parsed.theme==='light'||parsed.theme==='dark')){
+                                        currentTheme = parsed.theme;
+                                        saveTheme(currentTheme);
+                                        document.getElementById('prompt-helper-container')?.setAttribute('data-theme', currentTheme);
+                                        updateThemeButtonUI();
+                                    }
+                                    if(parsed.lang && (parsed.lang==='zh'||parsed.lang==='en')){
+                                        currentLang = parsed.lang;
+                                        GM_setValue(LANG_STORE_KEY, currentLang);
+                                    }
+                                    updateUI();
+                                }catch(e){
+                                    alert('导入设置失败：' + (e&&e.message?e.message:String(e)));
+                                }
+                            }
+                        }
+
+                        // 汇总提示（保持旧提示的同时增加统计项）
+                        const baseMsg = translations[currentLang].alertImportDone(added, renamed);
+                        const extra = [];
+                        if(overwritten) extra.push(`覆盖 ${overwritten}`);
+                        if(skippedByName) extra.push(`跳过(同名) ${skippedByName}`);
+                        if(skippedByContent) extra.push(`跳过(内容重复) ${skippedByContent}`);
+                        alert(extra.length ? `${baseMsg}\n${extra.join('；')}` : baseMsg);
+
                         D.importFileInput.value='';
                     }catch(e){
                         console.error(e);
                         alert(translations[currentLang].alertImportInvalid);
+                        D.importFileInput.value='';
                     }
                 };
                 reader.readAsText(file,'utf-8');
@@ -1398,7 +1466,7 @@ USER QUESTION (paste multi-paragraph content between the markers):
             });
             D.siteSaveBtn.addEventListener('click', ()=>{
                 const t = translations[currentLang];
-                const pattern = (D.sitePatternInput.value||'').trim();
+                const pattern = normalizeName(D.sitePatternInput.value||'');
                 const tplId = D.siteTplSelect.value;
                 if(!pattern){ alert(t.alertSitePatternRequired); return; }
                 if(!tplId){ alert(t.alertSiteTemplateRequired); return; }
@@ -1512,7 +1580,10 @@ USER QUESTION (paste multi-paragraph content between the markers):
             window.promptHelperInitialized=true;
 
             injectStyles();
-            (function(){ buildAndInit(); })();
+            const {container} = (function(){
+                const res = buildAndInit();
+                return res||{};
+            })();
         }
 
         if(getCurrentSiteConfig()){ init(); }
