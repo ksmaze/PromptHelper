@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         PromptHelper
 // @namespace    http://tampermonkey.net/
-// @version      1.6.1
-// @description  PromptHelper：通用于 ChatGPT, Gemini, Claude, Kimi, DeepSeek, 通义、元宝、Google AI Studio、Grok、豆包 的侧边模板助手（默认仅保留“通用交互式提问模板”；稳健事件触发；主/设分离视图；支持模板导入/导出）。本版：从聊天栏读取用户原始内容，应用模板后回填覆盖聊天栏内容；修复 Kimi & Claude 站点重复插入、未覆盖清空与换行丢失问题（Claude 采用“每行→段落”的严格粘贴模式）。sauterne
+// @version      1.6.2
+// @description  PromptHelper：通用于 ChatGPT, Gemini, Claude, Kimi, DeepSeek, 通义、元宝、Google AI Studio、Grok、豆包 的侧边模板助手；主/设分离；导入/导出；从聊天栏读取并回填；Kimi/Claude 专项处理（覆盖、不重复、换行保真）。新增：Helper 下方“应用默认模板”一键套用默认模板并直接填入聊天栏。
 // @author       Sauterne
 // @match        http://chat.openai.com/*
 // @match        https://chat.openai.com/*
@@ -66,7 +66,7 @@
     }
     function saveUISettings(s){ GM_setValue(UI_STORE_KEY, JSON.stringify(s)); }
 
-    // 强制 open shadow（提高在封闭 Shadow DOM 页面的输入框探测能力）
+    // 强制 open shadow
     const originalAttachShadow = Element.prototype.attachShadow;
     Element.prototype.attachShadow = function(options) {
         if (SETTINGS.forceOpenShadow && options && options.mode === 'closed') options.mode = 'open';
@@ -77,8 +77,6 @@
     function tryCreateKeyboardEvent(type, opts = {}) { try { return new KeyboardEvent(type, opts); } catch (_) { return new Event(type, { bubbles: !!opts.bubbles, cancelable: !!opts.cancelable }); } }
 
     function escapeHtml(s){return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
-
-    // 通用：保留空行；段落内用 <br> 表示单行换行
     function textToHtmlPreserveBlankLines(text){
         const lines=text.split('\n');const paras=[];let buf=[];
         const flush=()=>{if(!buf.length)return;const inner=buf.map(ln=>escapeHtml(ln)).join('<br>');paras.push(`<p>${inner}</p>`);buf=[];};
@@ -86,7 +84,7 @@
         if(paras.length===0)paras.push('<p><br></p>');
         return paras.join('');
     }
-    // Claude 专用：把每行都作为独立段落（单个换行 -> 新段落；多空行 -> 多个 <p><br></p>）
+    // Claude：每行一个段落，确保单个换行不丢
     function textToProseMirrorParagraphHTML(text){
         const lines = text.split('\n');
         if(lines.length===0) return '<p><br></p>';
@@ -97,7 +95,6 @@
         }
         return html;
     }
-
     function pasteIntoProseMirror(editableEl, plainText, opts={}){
         const pmStrict = !!opts.pmStrict;
         const html = pmStrict ? textToProseMirrorParagraphHTML(plainText)
@@ -227,7 +224,8 @@ USER QUESTION (paste multi-paragraph content between the markers):
                 alertExportEmpty:"没有可导出的模板（默认模板不导出）。",
                 alertExportDone:"模板已导出为文件：",
                 alertImportInvalid:"导入失败：文件格式无效或为空。",
-                alertImportDone:(added,renamed)=>`成功导入 ${added} 个模板（其中 ${renamed} 个已重命名避免重名）。`
+                alertImportDone:(added,renamed)=>`成功导入 ${added} 个模板（其中 ${renamed} 个已重命名避免重名）。`,
+                quickApplyBtn:"应用默认模板"
             },
             en:{
                 toggleButton:"Helper",panelTitle:"PromptHelper",collapseTitle:"Collapse",
@@ -250,7 +248,8 @@ USER QUESTION (paste multi-paragraph content between the markers):
                 alertExportEmpty:"No templates to export (default is excluded).",
                 alertExportDone:"Templates exported as file: ",
                 alertImportInvalid:"Import failed: invalid or empty file.",
-                alertImportDone:(added,renamed)=>`Imported ${added} templates (${renamed} renamed to avoid conflicts).`
+                alertImportDone:(added,renamed)=>`Imported ${added} templates (${renamed} renamed to avoid conflicts).`,
+                quickApplyBtn:"Quick Apply"
             }
         };
 
@@ -274,16 +273,31 @@ USER QUESTION (paste multi-paragraph content between the markers):
                     color: #333 !important;
                     line-height: 1.5 !important;
                 }
+                /* 主侧按钮 */
                 #prompt-helper-toggle {
                     width: var(--ph-toggle-width, 120px) !important;
                     height: var(--ph-toggle-height, 40px) !important;
                     background-color: #007bff !important; color: white !important;
-                    border: none !important; border-radius: 10px 0 0 10px !important;
+                    border-radius: 10px 0 0 10px !important;
                     cursor: pointer !important;
                     display: flex !important; align-items: center !important; justify-content: center !important;
                     font-size: 16px !important; box-shadow: -2px 2px 5px rgba(0,0,0,0.2) !important;
                     white-space: nowrap !important; padding: 0 12px !important;
                 }
+                /* 新增：快速应用默认模板按钮（置于 Helper 按钮下方） */
+                #prompt-helper-quickapply {
+                    width: var(--ph-toggle-width, 120px) !important;
+                    height: 32px !important;
+                    margin-top: 6px !important;
+                    background-color: #28a745 !important; color: #fff !important; /* 高亮 */
+                    border-radius: 10px 0 0 10px !important;
+                    cursor: pointer !important;
+                    display: flex !important; align-items: center !important; justify-content: center !important;
+                    font-size: 13px !important; box-shadow: -2px 2px 5px rgba(0,0,0,0.18) !important;
+                    white-space: nowrap !important; padding: 0 10px !important;
+                }
+                #prompt-helper-quickapply:hover { filter: brightness(0.95) !important; }
+
                 #prompt-helper-content {
                     position: absolute !important;
                     top: 0 !important;
@@ -307,20 +321,20 @@ USER QUESTION (paste multi-paragraph content between the markers):
                     padding-bottom: 14px !important;
                 }
                 #prompt-helper-content.hidden { transform: translateX(100%) !important; opacity: 0 !important; pointer-events: none !important; }
-                #prompt-helper-content h3 { padding: 0 !important; font-size: 18px !important; color: #343a40 !important; text-align: center !important; font-weight: bold !important; }
+                #prompt-helper-content h3 { padding: 0 !important; font-size: 18px !important; color: #343a40 !important; text-align: center !important; font-weight: bold !重要; }
 
-                /* 主/设双页：用 data-view 切换，互斥显示 */
+                /* 主/设双页：互斥显示 */
                 #prompt-helper-content[data-view="main"]    #ph-settings-view { display: none !important; }
                 #prompt-helper-content[data-view="settings"] #ph-main-view     { display: none !important; }
 
-                /* 垂直节距 */
+                /* 间距 */
                 #prompt-helper-content .ph-section { display: flex !important; flex-direction: column !important; gap: 6px !important; }
                 #prompt-helper-content .ph-section + .ph-section { margin-top: 8px !important; }
 
                 #prompt-helper-content label { font-weight: bold !important; color: #495057 !important; font-size: 14px !important; }
                 #prompt-helper-content select, #prompt-helper-content input, #prompt-helper-content textarea {
-                    width: 100% !important; padding: 8px !important; border: 1px solid #ced4da !important; border-radius: 4px !important;
-                    font-size: 14px !important; color: #333 !important; background-color: #fff !important; line-height: 1.5 !important;
+                    width: 100% !重要; padding: 8px !重要; border: 1px solid #ced4da !重要; border-radius: 4px !重要;
+                    font-size: 14px !重要; color: #333 !重要; background-color: #fff !重要; line-height: 1.5 !重要;
                 }
                 #prompt-helper-content textarea { resize: vertical !important; min-height: 100px !important; }
                 #prompt-helper-content #ph-template-body { height: 150px !important; }
@@ -341,8 +355,8 @@ USER QUESTION (paste multi-paragraph content between the markers):
                 /* 头部 */
                 #prompt-helper-container .ph-header { display: flex !important; justify-content: space-between !important; align-items: center !important; margin-bottom: 6px !important; padding: 0 !important; }
                 #prompt-helper-container .ph-header-right { display: flex !important; align-items: center !important; gap: 8px !important; }
-                #prompt-helper-container #ph-collapse-btn { font-size: 24px !important; cursor: pointer !important; color: #6c757d !important; border: none !important; background: none !important; padding: 0 5px !important; line-height: 1 !important; }
-                #prompt-helper-container #ph-lang-toggle { font-size: 12px !important; color: #007bff !important; background: none !important; border: 1px solid #007bff !important; padding: 2px 6px !important; border-radius: 4px !重要; cursor: pointer !important; }
+                #prompt-helper-container #ph-collapse-btn { font-size: 24px !important; cursor: pointer !important; color: #6c757d !important; background: none !important; padding: 0 5px !important; line-height: 1 !important; }
+                #prompt-helper-container #ph-lang-toggle { font-size: 12px !important; color: #007bff !important; background: none !important; border: 1px solid #007bff !important; padding: 2px 6px !important; border-radius: 4px !important; cursor: pointer !important; }
 
                 /* 设置按钮（右上角） */
                 #prompt-helper-container #ph-settings-btn { font-size: 12px !important; color: #6c757d !important; background: #fff !important; border: 1px solid #ced4da !important; padding: 2px 8px !important; border-radius: 4px !important; cursor: pointer !important; }
@@ -352,7 +366,7 @@ USER QUESTION (paste multi-paragraph content between the markers):
                 #prompt-helper-container #ph-settings-view { display: flex !important; flex-direction: column !important; gap: 10px !important; }
                 #prompt-helper-content .ph-grid { display: grid !important; grid-template-columns: 1fr 1fr !important; gap: 8px 10px !important; }
                 @media (max-width: 480px) { #prompt-helper-content .ph-grid { grid-template-columns: 1fr !important; } }
-            `);
+            `.replace(/！重要/g, '!important')); // 防止全角误写
         }
 
         function applyUISettings(container){
@@ -362,7 +376,6 @@ USER QUESTION (paste multi-paragraph content between the markers):
             container.style.setProperty('--ph-toggle-height', `${uiSettings.toggleHeight}px`);
         }
 
-        // 解析真正可编辑节点（含 Lexical/Kimi、ProseMirror/Claude）
         function resolveEditableTarget(el){
             if(!el) return null;
             const tag = el.tagName?.toLowerCase?.();
@@ -371,8 +384,6 @@ USER QUESTION (paste multi-paragraph content between the markers):
             const inner = el.querySelector?.('[contenteditable="true"], textarea, input, [role="textbox"]');
             return inner || el;
         }
-
-        // 清空可编辑区域（为 Lexical/Kimi/ProseMirror 定制，确保彻底清空）
         function clearEditableContent(el){
             el = resolveEditableTarget(el);
             if(!el) return;
@@ -395,22 +406,18 @@ USER QUESTION (paste multi-paragraph content between the markers):
                 try{ el.dispatchEvent(new Event('change',{bubbles:true})); }catch(_){}
             }
         }
-
-        // 仅粘贴模式（用于 Kimi & Claude）：避免双写，配合清空
         function replaceContentEditable(el, text, opts={}){
             el = resolveEditableTarget(el);
             if(!el) return;
             const mode = opts.mode || 'default';
             const clearBefore = !!opts.clearBefore;
-            const pmStrict = !!opts.pmStrict; // Claude 严格模式
+            const pmStrict = !!opts.pmStrict;
 
             try{
                 el.focus();
                 if(clearBefore){
                     clearEditableContent(el);
                 }
-
-                // 重新选中（有些编辑器在清空后会失焦）
                 const sel = window.getSelection();
                 const range = document.createRange();
                 range.selectNodeContents(el);
@@ -427,17 +434,10 @@ USER QUESTION (paste multi-paragraph content between the markers):
                         dt.setData('text/html', html);
                         const evt=new ClipboardEvent('paste',{bubbles:true,cancelable:true,clipboardData:dt});
                         ok=el.dispatchEvent(evt);
-                        if(!ok){
-                            el.innerHTML = html; // 兜底
-                        }
+                        if(!ok){ el.innerHTML = html; }
                     }catch(_){
-                        try{
-                            const html = pmStrict ? textToProseMirrorParagraphHTML(text)
-                                                  : textToHtmlPreserveBlankLines(text);
-                            el.innerHTML = html;
-                        }catch(__){
-                            el.textContent = text;
-                        }
+                        try{ el.innerHTML = (pmStrict ? textToProseMirrorParagraphHTML(text) : textToHtmlPreserveBlankLines(text)); }
+                        catch(__){ el.textContent = text; }
                     }
                 } else {
                     try { document.execCommand('insertText', false, text); } catch(_) {}
@@ -466,12 +466,16 @@ USER QUESTION (paste multi-paragraph content between the markers):
             const container=create('div','prompt-helper-container');
 
             D.toggleButton=create('button','prompt-helper-toggle');
+            // 新增：快速应用默认模板按钮
+            D.quickApplyButton=document.createElement('button');
+            D.quickApplyButton.id='prompt-helper-quickapply';
+
             D.contentPanel=create('div','prompt-helper-content',['hidden']);
             D.contentPanel.setAttribute('data-view','main');
 
             // 头部
             D.langToggleButton=create('button','ph-lang-toggle',[],{},[document.createTextNode('中/En')]);
-            D.title=create('h3','ph-title');
+            D.title=document.createElement('h3'); D.title.id='ph-title';
             D.settingsButton=create('button','ph-settings-btn',[],{id:'ph-settings-btn',title:''},[document.createTextNode('⚙️')]);
             D.collapseButton=create('button','ph-collapse-btn',[],{id:'ph-collapse-btn'},[document.createTextNode('\u00d7')]);
             const rightBox=create('div',null,['ph-header-right'],{},[D.settingsButton,D.collapseButton]);
@@ -526,18 +530,16 @@ USER QUESTION (paste multi-paragraph content between the markers):
             ]);
             const settingsButtons = create('div',null,['ph-button-group'],{},[D.settingsSaveBtn, D.settingsResetBtn]);
             D.backBtn = create('button','ph-back-btn',['ph-btn-secondary'],{},[document.createTextNode('←')]);
-            D.settingsView = create('div','ph-settings-view',[],{},[
-                D.backBtn,
-                D.settingsTitleEl, settingsGrid, settingsButtons,
-                sectionIO
-            ]);
+            D.settingsView = document.createElement('div'); D.settingsView.id='ph-settings-view';
+            D.settingsView.append(D.backBtn, D.settingsTitleEl, settingsGrid, settingsButtons, sectionIO);
 
             D.contentPanel.append(header, D.mainView, D.settingsView);
-            container.append(D.toggleButton,D.contentPanel);
+            // 按顺序：Helper 按钮 → 快速应用按钮 → 面板
+            container.append(D.toggleButton, D.quickApplyButton, D.contentPanel);
             return {container,elements:D};
         }
 
-        // 工具：时间戳 / 下载 / 导入归一
+        // 工具：下载/导入归一/站点判断/取输入框/取文本
         function nowStamp(){
             const d=new Date(); const p=n=>String(n).padStart(2,'0');
             return `${d.getFullYear()}${p(d.getMonth()+1)}${p(d.getDate())}_${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}`;
@@ -557,9 +559,7 @@ USER QUESTION (paste multi-paragraph content between the markers):
             while(existingSet.has(`${baseName}${IMPORT_SUFFIX_BASE} ${i}`)) i++;
             return `${baseName}${IMPORT_SUFFIX_BASE} ${i}`;
         }
-        function genId(){
-            return `prompt_${Date.now()}_${Math.random().toString(36).slice(2,8)}`;
-        }
+        function genId(){ return `prompt_${Date.now()}_${Math.random().toString(36).slice(2,8)}`; }
         function normalizeImportedList(parsed){
             if(!parsed) return [];
             if(Array.isArray(parsed)) return parsed;
@@ -570,9 +570,7 @@ USER QUESTION (paste multi-paragraph content between the markers):
             }
             return [];
         }
-
         function getCurrentSiteConfig(){ const hostname=window.location.hostname; for(const key in siteConfigs){ if(hostname.includes(key)) return siteConfigs[key]; } return null; }
-
         function findInputElement(){
             const siteConfig=getCurrentSiteConfig(); if(!siteConfig){return null;}
             let inputElement=null;
@@ -596,7 +594,6 @@ USER QUESTION (paste multi-paragraph content between the markers):
             inputElement = resolveEditableTarget(inputElement);
             return inputElement;
         }
-
         function getTextFromEditable(el){
             el = resolveEditableTarget(el);
             if(!el) return '';
@@ -608,14 +605,168 @@ USER QUESTION (paste multi-paragraph content between the markers):
             }
             return (el.value || el.textContent || '').trim();
         }
+        function isKimiSite(){ const h=location.hostname; return h.includes('kimi.moonshot.cn')||h.includes('kimi.com')||h.includes('www.kimi.com'); }
+        function isClaudeSite(){ const h=location.hostname; return h.includes('claude.ai')||h.includes('fuclaude.com'); }
 
-        function isKimiSite(){
-            const h = window.location.hostname;
-            return h.includes('kimi.moonshot.cn') || h.includes('kimi.com') || h.includes('www.kimi.com');
+        // 统一的“将 finalPrompt 覆盖填回聊天栏”的函数（主按钮与快速按钮共用）
+        function applyPromptToChat(inputElement, finalPrompt){
+            inputElement = resolveEditableTarget(inputElement);
+
+            if(inputElement.tagName?.toLowerCase?.()==='textarea'){
+                if(location.hostname.includes('tongyi.com')){
+                    const reactKey=Object.keys(inputElement).find(key=>key.startsWith('__reactInternalInstance')||key.startsWith('__reactFiber')||key.startsWith('__reactProps'));
+                    if(reactKey){ try{
+                        const fiberNode=inputElement[reactKey];
+                        const possiblePaths=[fiberNode?.memoizedProps?.onChange,fiberNode?.return?.memoizedProps?.onChange,fiberNode?.return?.return?.memoizedProps?.onChange,fiberNode?.pendingProps?.onChange];
+                        for(const onChange of possiblePaths){ if(onChange&&typeof onChange==='function'){ const fakeEvent={target:{value:finalPrompt},currentTarget:{value:finalPrompt},preventDefault:()=>{},stopPropagation:()=>{}}; onChange(fakeEvent); break; } }
+                    }catch(e){ console.log('[PromptHelper] React状态操作失败:',e);} }
+                    inputElement.focus(); inputElement.value=''; inputElement.value=finalPrompt;
+                    try{ Object.defineProperty(inputElement,'value',{value:finalPrompt,writable:true,configurable:true}); }catch(_){}
+                    [ new Event('focus',{bubbles:true}),
+                      tryCreateInputEvent('beforeinput',{bubbles:true,cancelable:true,data:finalPrompt,inputType:'insertText'}),
+                      tryCreateInputEvent('input',{bubbles:true,cancelable:true,data:finalPrompt,inputType:'insertText'}),
+                      new Event('change',{bubbles:true}),
+                      tryCreateKeyboardEvent('keydown',{bubbles:true,key:'a'}),
+                      tryCreateKeyboardEvent('keyup',{bubbles:true,key:'a'}),
+                      new Event('blur',{bubbles:true})
+                    ].forEach((ev,i)=>setTimeout(()=>inputElement.dispatchEvent(ev),i*10));
+                    setTimeout(()=>{ if(inputElement.value!==finalPrompt) inputElement.value=finalPrompt; inputElement.blur(); setTimeout(()=>{ inputElement.focus(); inputElement.value=finalPrompt; inputElement.dispatchEvent(tryCreateInputEvent('input',{bubbles:true,cancelable:true,data:finalPrompt,inputType:'insertText'})); inputElement.dispatchEvent(new Event('change',{bubbles:true})); inputElement.dispatchEvent(new Event('propertychange',{bubbles:true})); window.dispatchEvent(new Event('resize')); },50); },150);
+                } else if(location.hostname.includes('grok.com')){
+                    inputElement.focus(); setNativeValue(inputElement,''); inputElement.dispatchEvent(new Event('input',{bubbles:true})); setNativeValue(inputElement,finalPrompt);
+                    try{ inputElement.setAttribute('value',finalPrompt);}catch(_){} inputElement.dispatchEvent(tryCreateInputEvent('beforeinput',{bubbles:true,cancelable:true,inputType:'insertFromPaste',data:finalPrompt})); inputElement.dispatchEvent(new Event('input',{bubbles:true})); inputElement.dispatchEvent(tryCreateInputEvent('input',{bubbles:true,cancelable:true,inputType:'insertText',data:finalPrompt})); inputElement.dispatchEvent(new Event('change',{bubbles:true}));
+                    ['keydown','keypress','keyup'].forEach(type=>inputElement.dispatchEvent(tryCreateKeyboardEvent(type,{bubbles:true,cancelable:true,key:'a',code:'KeyA'})));
+                    try{ inputElement.setSelectionRange(finalPrompt.length,finalPrompt.length);}catch(_){}
+                    setTimeout(()=>{ inputElement.dispatchEvent(new Event('input',{bubbles:true})); inputElement.dispatchEvent(new Event('change',{bubbles:true})); },50);
+                } else {
+                    if(location.hostname.includes('openai.com')||location.hostname.includes('chatgpt.com')){
+                        inputElement.value=finalPrompt;
+                        const isChrome=navigator.userAgent.includes('Chrome')&&!navigator.userAgent.includes('Firefox');
+                        if(isChrome){
+                            setTimeout(()=>{
+                                inputElement.focus(); inputElement.value=finalPrompt;
+                                if(typeof inputElement.setSelectionRange==='function') inputElement.setSelectionRange(finalPrompt.length,finalPrompt.length);
+                                inputElement.dispatchEvent(tryCreateInputEvent('input',{bubbles:true,cancelable:false,inputType:'insertText'}));
+                                let protectionCount=0;
+                                const protect=()=>{ if(protectionCount<20){ const cur=inputElement.value; if(cur.replace(/\n/g,'')===finalPrompt.replace(/\n/g,'')&&!cur.includes('\n')&&finalPrompt.includes('\n')){ inputElement.value=finalPrompt; if(typeof inputElement.setSelectionRange==='function') inputElement.setSelectionRange(finalPrompt.length,finalPrompt.length); inputElement.dispatchEvent(tryCreateInputEvent('input',{bubbles:true,cancelable:false,inputType:'insertText'})); } protectionCount++; setTimeout(protect,100);} };
+                                setTimeout(protect,100);
+                            },50);
+                        } else {
+                            inputElement.dispatchEvent(new Event('input',{bubbles:true}));
+                            if(typeof inputElement.setSelectionRange==='function') inputElement.setSelectionRange(finalPrompt.length,finalPrompt.length);
+                        }
+                    } else { inputElement.value=finalPrompt; }
+                    if(location.hostname.includes('deepseek.com')){
+                        const parentDiv=inputElement.parentElement;
+                        if(parentDiv){
+                            let displayDiv=parentDiv.querySelector('.b13855df');
+                            if(!displayDiv){
+                                const allDivs=parentDiv.querySelectorAll('div');
+                                for(const div of allDivs){ if(!div.classList.contains('_24fad49')&&div!==parentDiv){ displayDiv=div; break; } }
+                            }
+                            if(displayDiv){
+                                displayDiv.innerHTML=''; finalPrompt.split('\n').forEach((line,idx)=>{ if(idx>0) displayDiv.appendChild(document.createElement('br')); displayDiv.appendChild(document.createTextNode(line)); });
+                            }
+                        }
+                    }
+                }
+            } else if(inputElement.getAttribute && (inputElement.getAttribute('contenteditable')==='true' || inputElement.isContentEditable)){
+                if(isKimiSite()){
+                    replaceContentEditable(inputElement, finalPrompt, { mode: 'paste-only', clearBefore: true });
+                } else if(isClaudeSite()){
+                    replaceContentEditable(inputElement, finalPrompt, { mode: 'paste-only', clearBefore: true, pmStrict: true });
+                } else if(location.hostname.includes('claude.ai')||location.hostname.includes('fuclaude.com')){
+                    pasteIntoProseMirror(inputElement,finalPrompt,{pmStrict:true});
+                    inputElement.dispatchEvent(new Event('input',{bubbles:true}));
+                    inputElement.dispatchEvent(new Event('change',{bubbles:true}));
+                } else {
+                    if(location.hostname.includes('openai.com')||location.hostname.includes('chatgpt.com')){
+                        inputElement.innerHTML='';
+                        const lines=finalPrompt.split('\n');
+                        lines.forEach((line,index)=>{ if(index>0) inputElement.appendChild(document.createElement('br')); if(line.length>0) inputElement.appendChild(document.createTextNode(line)); else if(index<lines.length-1) inputElement.appendChild(document.createElement('br')); });
+                        const isChrome=navigator.userAgent.includes('Chrome')&&!navigator.userAgent.includes('Firefox');
+                        if(isChrome){
+                            const needEscape=(location.hostname.includes('openai.com')||location.hostname.includes('chatgpt.com'));
+                            const htmlWithBreaks=needEscape?escapeHtml(finalPrompt).replace(/\n/g,'<br>'):finalPrompt.replace(/\n/g,'<br>');
+                            setTimeout(()=>{
+                                inputElement.focus(); inputElement.innerHTML=htmlWithBreaks;
+                                const range=document.createRange(); const sel=window.getSelection();
+                                range.selectNodeContents(inputElement); range.collapse(false); sel.removeAllRanges(); sel.addRange(range);
+                                inputElement.dispatchEvent(tryCreateInputEvent('input',{bubbles:true,cancelable:false,inputType:'insertFromPaste'}));
+                                let protectionCount=0;
+                                const protect=()=>{ if(protectionCount<20){ const currentHtml=inputElement.innerHTML; const currentText=inputElement.textContent||inputElement.innerText;
+                                    if(currentText.replace(/\n/g,'')===finalPrompt.replace(/\n/g,'')&&!currentHtml.includes('<br>')&&finalPrompt.includes('\n')){
+                                        inputElement.innerHTML=htmlWithBreaks;
+                                        try{ const r=document.createRange(); const s=window.getSelection(); r.selectNodeContents(inputElement); r.collapse(false); s.removeAllRanges(); s.addRange(r);}catch(_){}
+                                    }
+                                    protectionCount++; setTimeout(protect,100);
+                                }};
+                                setTimeout(protect,100);
+                            },50);
+                        }
+                    } else { inputElement.textContent=finalPrompt; }
+                }
+            } else {
+                if('value' in inputElement) inputElement.value=finalPrompt;
+                if(inputElement.textContent!==undefined) inputElement.textContent=finalPrompt;
+                if(inputElement.innerText!==undefined) inputElement.innerText=finalPrompt;
+            }
+
+            // 事件派发（Kimi/Claude 不再派 paste 避免重复）
+            const commonEvents = (isKimiSite() || isClaudeSite())
+                ? ['input','change','keydown','keyup']
+                : ['input','change','keydown','keyup','paste'];
+            commonEvents.forEach(type=>{
+                let ev; if(type==='input') ev=tryCreateInputEvent('input',{bubbles:true,cancelable:true,inputType:'insertText',data:finalPrompt});
+                else if(type==='keydown'||type==='keyup') ev=tryCreateKeyboardEvent(type,{bubbles:true,cancelable:true,key:'a',code:'KeyA'});
+                else ev=new Event(type,{bubbles:true,cancelable:true});
+                try{ inputElement.dispatchEvent(ev); }catch(_){}
+            });
+
+            if(location.hostname.includes('deepseek.com')){
+                ['keydown','keypress','keyup'].forEach(t=>inputElement.dispatchEvent(tryCreateKeyboardEvent(t,{bubbles:true,cancelable:true,key:'a',code:'KeyA',which:65,keyCode:65})));
+                inputElement.dispatchEvent(new Event('compositionstart',{bubbles:true}));
+                inputElement.dispatchEvent(new Event('compositionupdate',{bubbles:true}));
+                inputElement.dispatchEvent(new Event('compositionend',{bubbles:true}));
+            }
+
+            inputElement.focus();
+            if(inputElement.tagName && (inputElement.tagName.toLowerCase()==='textarea'||inputElement.type==='text')){
+                try{ inputElement.setSelectionRange(finalPrompt.length,finalPrompt.length);}catch(_){}
+            } else if(inputElement.getAttribute && inputElement.getAttribute('contenteditable')==='true'){
+                const range=document.createRange(); const sel=window.getSelection();
+                if(sel&&inputElement.childNodes.length>0){ range.selectNodeContents(inputElement); range.collapse(false); sel.removeAllRanges(); sel.addRange(range);}
+            }
+
+            setTimeout(()=>{
+                try{ inputElement.dispatchEvent(new Event('input',{bubbles:true})); }catch(_){}
+                try{ inputElement.dispatchEvent(new Event('change',{bubbles:true})); }catch(_){}
+            },100);
+
+            // React/Angular 等兜底（排除 Kimi/Claude，避免二次注入）
+            const specialSites=['deepseek.com','tongyi.com','yuanbao.tencent.com','aistudio.google.com','doubao.com'];
+            const currentSite=specialSites.find(site=>location.hostname.includes(site));
+            if(currentSite){
+                setTimeout(()=>{
+                    const reactKey=Object.keys(inputElement).find(key=>key.startsWith('__reactInternalInstance')||key.startsWith('__reactFiber'));
+                    if(reactKey){
+                        try{
+                            const fiberNode=inputElement[reactKey];
+                            if(fiberNode&&fiberNode.memoizedProps&&typeof fiberNode.memoizedProps.onChange==='function'){
+                                const fakeEvent={target:{value:finalPrompt},currentTarget:{value:finalPrompt},preventDefault:()=>{},stopPropagation:()=>{}};
+                                fiberNode.memoizedProps.onChange(fakeEvent);
+                            }
+                        }catch(e){ console.log(`[PromptHelper] ${currentSite} React状态更新失败:`,e); }
+                    }
+                    setTimeout(()=>{ if('value' in inputElement && inputElement.value!==finalPrompt){ inputElement.value=finalPrompt; inputElement.dispatchEvent(new Event('input',{bubbles:true})); } },300);
+                },500);
+            }
         }
-        function isClaudeSite(){
-            const h = window.location.hostname;
-            return h.includes('claude.ai') || h.includes('fuclaude.com');
+
+        function getFinalFromChatByTemplateStr(templateStr){
+            if(!templateStr) return {error:'no_template'};
+            const inputEl = findInputElement(); if(!inputEl) return {error:'no_input'};
+            const userTyped = getTextFromEditable(inputEl); if(!userTyped) return {error:'no_user_input'};
+            return { inputEl, final: templateStr.replace('{User Question}', userTyped) };
         }
 
         function init(){
@@ -666,7 +817,6 @@ USER QUESTION (paste multi-paragraph content between the markers):
             };
 
             const savePrompts=()=>GM_setValue(PROMPTS_STORE_KEY,JSON.stringify(prompts));
-
             function removeLegacyDefaults(obj){
                 const legacyIds=['prompt_1','prompt_2','prompt_3'];
                 const legacyNames=new Set(['通用回答模板','代码评审模板','英文润色模板']);
@@ -679,6 +829,7 @@ USER QUESTION (paste multi-paragraph content between the markers):
                 D.toggleButton.textContent=t.toggleButton; D.title.textContent=t.panelTitle;
                 D.collapseButton.title=t.collapseTitle;
                 D.settingsButton.title = t.settingsTitle;
+                D.quickApplyButton.textContent = t.quickApplyBtn;
 
                 D.labelSelect.textContent=t.selectTemplate; D.newBtn.textContent=t.newBtn;
                 D.saveBtn.textContent=t.saveBtn; D.deleteBtn.textContent=t.deleteBtn;
@@ -692,7 +843,6 @@ USER QUESTION (paste multi-paragraph content between the markers):
                 D.settingToggleHeightLabel.textContent = t.settingToggleHeight;
                 D.settingsSaveBtn.textContent = t.settingsSave;
                 D.settingsResetBtn.textContent = t.settingsReset;
-
                 D.importBtn.textContent=t.importBtn; D.exportBtn.textContent=t.exportBtn;
 
                 D.settingTopInput.value = uiSettings.top;
@@ -718,24 +868,14 @@ USER QUESTION (paste multi-paragraph content between the markers):
                 if(prompts[DEFAULT_TEMPLATE_ID]){ D.templateSelect.value=DEFAULT_TEMPLATE_ID; displaySelectedPrompt(); }
             };
 
-            const generateFinalPromptFromChat = ()=>{
-                const template=D.templateBodyTextarea.value;
-                if(!template){ alert(translations[currentLang].alertTemplateError); return null;}
-                let inputEl = findInputElement();
-                if(!inputEl){ alert(translations[currentLang].alertSubmitError); return null; }
-                const userTyped = getTextFromEditable(inputEl);
-                if(!userTyped){ alert(translations[currentLang].alertNoUserInput); return null; }
-                return { final: template.replace('{User Question}', userTyped), inputEl };
-            };
-
-            // 打开/收起、语言、视图
+            // 主界面控制
             D.toggleButton.addEventListener('click',()=>D.contentPanel.classList.remove('hidden'));
             D.collapseButton.addEventListener('click',()=>D.contentPanel.classList.add('hidden'));
             D.langToggleButton.addEventListener('click',()=>{ currentLang=currentLang==='zh'?'en':'zh'; GM_setValue(LANG_STORE_KEY,currentLang); updateUI(); });
             D.settingsButton.addEventListener('click', ()=> D.contentPanel.setAttribute('data-view','settings'));
             D.backBtn.addEventListener('click', ()=> D.contentPanel.setAttribute('data-view','main'));
 
-            // 主视图：模板 CRUD
+            // 模板 CRUD
             D.templateSelect.addEventListener('change',displaySelectedPrompt);
             D.newBtn.addEventListener('click',()=>{ D.templateSelect.value=''; D.templateNameInput.value=''; D.templateBodyTextarea.value=''; D.templateNameInput.focus(); D.deleteBtn.disabled=true; });
             D.saveBtn.addEventListener('click',()=>{
@@ -759,9 +899,13 @@ USER QUESTION (paste multi-paragraph content between the markers):
                 }
             });
 
-            // 复制（基于聊天栏文本）
+            // 复制（从聊天栏读取）
             D.copyBtn.addEventListener('click',()=>{
-                const res = generateFinalPromptFromChat(); if(!res) return;
+                const template=D.templateBodyTextarea.value;
+                const res = getFinalFromChatByTemplateStr(template);
+                if(res.error==='no_template'){ alert(translations[currentLang].alertTemplateError); return; }
+                if(res.error==='no_input'){ alert(translations[currentLang].alertSubmitError); return; }
+                if(res.error==='no_user_input'){ alert(translations[currentLang].alertNoUserInput); return; }
                 navigator.clipboard.writeText(res.final).then(()=>{
                     const originalText=D.copyBtn.textContent; D.copyBtn.textContent=translations[currentLang].copiedBtn; D.copyBtn.disabled=true;
                     setTimeout(()=>{ D.copyBtn.textContent=originalText; D.copyBtn.disabled=false; },2000);
@@ -838,167 +982,27 @@ USER QUESTION (paste multi-paragraph content between the markers):
                 reader.readAsText(file,'utf-8');
             });
 
-            // 应用：生成模板 + 回填聊天栏（覆盖）
+            // 应用（主界面按钮）
             D.submitBtn.addEventListener('click',()=>{
-                const res = generateFinalPromptFromChat(); if(!res) return;
-                const finalPrompt = res.final;
-                let inputElement = resolveEditableTarget(res.inputEl);
+                const template=D.templateBodyTextarea.value;
+                const res = getFinalFromChatByTemplateStr(template);
+                if(res.error==='no_template'){ alert(translations[currentLang].alertTemplateError); return; }
+                if(res.error==='no_input'){ alert(translations[currentLang].alertSubmitError); return; }
+                if(res.error==='no_user_input'){ alert(translations[currentLang].alertNoUserInput); return; }
+                applyPromptToChat(res.inputEl, res.final);
+                D.contentPanel.classList.add('hidden');
+            });
 
-                if(inputElement.tagName?.toLowerCase?.()==='textarea'){
-                    if(window.location.hostname.includes('tongyi.com')){
-                        const reactKey=Object.keys(inputElement).find(key=>key.startsWith('__reactInternalInstance')||key.startsWith('__reactFiber')||key.startsWith('__reactProps'));
-                        if(reactKey){ try{
-                            const fiberNode=inputElement[reactKey];
-                            const possiblePaths=[fiberNode?.memoizedProps?.onChange,fiberNode?.return?.memoizedProps?.onChange,fiberNode?.return?.return?.memoizedProps?.onChange,fiberNode?.pendingProps?.onChange];
-                            for(const onChange of possiblePaths){ if(onChange&&typeof onChange==='function'){ const fakeEvent={target:{value:finalPrompt},currentTarget:{value:finalPrompt},preventDefault:()=>{},stopPropagation:()=>{}}; onChange(fakeEvent); break; } }
-                        }catch(e){ console.log('[PromptHelper] React状态操作失败:',e);} }
-                        inputElement.focus(); inputElement.value=''; inputElement.value=finalPrompt;
-                        try{ Object.defineProperty(inputElement,'value',{value:finalPrompt,writable:true,configurable:true}); }catch(_){}
-                        [ new Event('focus',{bubbles:true}),
-                          tryCreateInputEvent('beforeinput',{bubbles:true,cancelable:true,data:finalPrompt,inputType:'insertText'}),
-                          tryCreateInputEvent('input',{bubbles:true,cancelable:true,data:finalPrompt,inputType:'insertText'}),
-                          new Event('change',{bubbles:true}),
-                          tryCreateKeyboardEvent('keydown',{bubbles:true,key:'a'}),
-                          tryCreateKeyboardEvent('keyup',{bubbles:true,key:'a'}),
-                          new Event('blur',{bubbles:true})
-                        ].forEach((ev,i)=>setTimeout(()=>inputElement.dispatchEvent(ev),i*10));
-                        setTimeout(()=>{ if(inputElement.value!==finalPrompt) inputElement.value=finalPrompt; inputElement.blur(); setTimeout(()=>{ inputElement.focus(); inputElement.value=finalPrompt; inputElement.dispatchEvent(tryCreateInputEvent('input',{bubbles:true,cancelable:true,data:finalPrompt,inputType:'insertText'})); inputElement.dispatchEvent(new Event('change',{bubbles:true})); inputElement.dispatchEvent(new Event('propertychange',{bubbles:true})); window.dispatchEvent(new Event('resize')); },50); },150);
-                    } else if(window.location.hostname.includes('grok.com')){
-                        inputElement.focus(); setNativeValue(inputElement,''); inputElement.dispatchEvent(new Event('input',{bubbles:true})); setNativeValue(inputElement,finalPrompt);
-                        try{ inputElement.setAttribute('value',finalPrompt);}catch(_){} inputElement.dispatchEvent(tryCreateInputEvent('beforeinput',{bubbles:true,cancelable:true,inputType:'insertFromPaste',data:finalPrompt})); inputElement.dispatchEvent(new Event('input',{bubbles:true})); inputElement.dispatchEvent(tryCreateInputEvent('input',{bubbles:true,cancelable:true,inputType:'insertText',data:finalPrompt})); inputElement.dispatchEvent(new Event('change',{bubbles:true}));
-                        ['keydown','keypress','keyup'].forEach(type=>inputElement.dispatchEvent(tryCreateKeyboardEvent(type,{bubbles:true,cancelable:true,key:'a',code:'KeyA'})));
-                        try{ inputElement.setSelectionRange(finalPrompt.length,finalPrompt.length);}catch(_){}
-                        setTimeout(()=>{ inputElement.dispatchEvent(new Event('input',{bubbles:true})); inputElement.dispatchEvent(new Event('change',{bubbles:true})); },50);
-                    } else {
-                        if(window.location.hostname.includes('openai.com')||window.location.hostname.includes('chatgpt.com')){
-                            inputElement.value=finalPrompt;
-                            const isChrome=navigator.userAgent.includes('Chrome')&&!navigator.userAgent.includes('Firefox');
-                            if(isChrome){
-                                setTimeout(()=>{
-                                    inputElement.focus(); inputElement.value=finalPrompt;
-                                    if(typeof inputElement.setSelectionRange==='function') inputElement.setSelectionRange(finalPrompt.length,finalPrompt.length);
-                                    inputElement.dispatchEvent(tryCreateInputEvent('input',{bubbles:true,cancelable:false,inputType:'insertText'}));
-                                    let protectionCount=0;
-                                    const protect=()=>{ if(protectionCount<20){ const cur=inputElement.value; if(cur.replace(/\n/g,'')===finalPrompt.replace(/\n/g,'')&&!cur.includes('\n')&&finalPrompt.includes('\n')){ inputElement.value=finalPrompt; if(typeof inputElement.setSelectionRange==='function') inputElement.setSelectionRange(finalPrompt.length,finalPrompt.length); inputElement.dispatchEvent(tryCreateInputEvent('input',{bubbles:true,cancelable:false,inputType:'insertText'})); } protectionCount++; setTimeout(protect,100);} };
-                                    setTimeout(protect,100);
-                                },50);
-                            } else {
-                                inputElement.dispatchEvent(new Event('input',{bubbles:true}));
-                                if(typeof inputElement.setSelectionRange==='function') inputElement.setSelectionRange(finalPrompt.length,finalPrompt.length);
-                            }
-                        } else { inputElement.value=finalPrompt; }
-                        if(window.location.hostname.includes('deepseek.com')){
-                            const parentDiv=inputElement.parentElement;
-                            if(parentDiv){
-                                let displayDiv=parentDiv.querySelector('.b13855df');
-                                if(!displayDiv){
-                                    const allDivs=parentDiv.querySelectorAll('div');
-                                    for(const div of allDivs){ if(!div.classList.contains('_24fad49')&&div!==parentDiv){ displayDiv=div; break; } }
-                                }
-                                if(displayDiv){
-                                    displayDiv.innerHTML=''; finalPrompt.split('\n').forEach((line,idx)=>{ if(idx>0) displayDiv.appendChild(document.createElement('br')); displayDiv.appendChild(document.createTextNode(line)); });
-                                }
-                            }
-                        }
-                    }
-                } else if(inputElement.getAttribute && (inputElement.getAttribute('contenteditable')==='true' || inputElement.isContentEditable)){
-                    if(isKimiSite()){
-                        // Kimi：清空 → 单次粘贴（保留换行，避免双写/追加）
-                        replaceContentEditable(inputElement, finalPrompt, { mode: 'paste-only', clearBefore: true });
-                    } else if(isClaudeSite()){
-                        // Claude(ProseMirror)：清空 → 单次粘贴（严格：每行→<p>；避免单回行丢失）
-                        replaceContentEditable(inputElement, finalPrompt, { mode: 'paste-only', clearBefore: true, pmStrict: true });
-                    } else if(window.location.hostname.includes('claude.ai')||window.location.hostname.includes('fuclaude.com')){
-                        // 兼容路径（理论上不会走到）
-                        pasteIntoProseMirror(inputElement,finalPrompt,{pmStrict:true});
-                        inputElement.dispatchEvent(new Event('input',{bubbles:true}));
-                        inputElement.dispatchEvent(new Event('change',{bubbles:true}));
-                        try{ const range=document.createRange(); const sel=window.getSelection(); range.selectNodeContents(inputElement); range.collapse(false); sel.removeAllRanges(); sel.addRange(range);}catch(_){}
-                    } else {
-                        // 其他 contenteditable：原逻辑
-                        if(window.location.hostname.includes('openai.com')||window.location.hostname.includes('chatgpt.com')){
-                            inputElement.innerHTML='';
-                            const lines=finalPrompt.split('\n');
-                            lines.forEach((line,index)=>{ if(index>0) inputElement.appendChild(document.createElement('br')); if(line.length>0) inputElement.appendChild(document.createTextNode(line)); else if(index<lines.length-1) inputElement.appendChild(document.createElement('br')); });
-                            const isChrome=navigator.userAgent.includes('Chrome')&&!navigator.userAgent.includes('Firefox');
-                            if(isChrome){
-                                const needEscape=(window.location.hostname.includes('openai.com')||window.location.hostname.includes('chatgpt.com'));
-                                const htmlWithBreaks=needEscape?escapeHtml(finalPrompt).replace(/\n/g,'<br>'):finalPrompt.replace(/\n/g,'<br>');
-                                setTimeout(()=>{
-                                    inputElement.focus(); inputElement.innerHTML=htmlWithBreaks;
-                                    const range=document.createRange(); const sel=window.getSelection();
-                                    range.selectNodeContents(inputElement); range.collapse(false); sel.removeAllRanges(); sel.addRange(range);
-                                    inputElement.dispatchEvent(tryCreateInputEvent('input',{bubbles:true,cancelable:false,inputType:'insertFromPaste'}));
-                                    let protectionCount=0;
-                                    const protect=()=>{ if(protectionCount<20){ const currentHtml=inputElement.innerHTML; const currentText=inputElement.textContent||inputElement.innerText;
-                                        if(currentText.replace(/\n/g,'')===finalPrompt.replace(/\n/g,'')&&!currentHtml.includes('<br>')&&finalPrompt.includes('\n')){
-                                            inputElement.innerHTML=htmlWithBreaks;
-                                            try{ const r=document.createRange(); const s=window.getSelection(); r.selectNodeContents(inputElement); r.collapse(false); s.removeAllRanges(); s.addRange(r);}catch(_){}
-                                        }
-                                        protectionCount++; setTimeout(protect,100);
-                                    }};
-                                    setTimeout(protect,100);
-                                },50);
-                            }
-                        } else { inputElement.textContent=finalPrompt; }
-                    }
-                } else {
-                    if('value' in inputElement) inputElement.value=finalPrompt;
-                    if(inputElement.textContent!==undefined) inputElement.textContent=finalPrompt;
-                    if(inputElement.innerText!==undefined) inputElement.innerText=finalPrompt;
-                }
-
-                // 事件派发：Kimi/Claude 禁止再次触发 paste，避免二次写入
-                const commonEvents = (isKimiSite() || isClaudeSite())
-                    ? ['input','change','keydown','keyup']
-                    : ['input','change','keydown','keyup','paste'];
-                commonEvents.forEach(type=>{
-                    let ev; if(type==='input') ev=tryCreateInputEvent('input',{bubbles:true,cancelable:true,inputType:'insertText',data:finalPrompt});
-                    else if(type==='keydown'||type==='keyup') ev=tryCreateKeyboardEvent(type,{bubbles:true,cancelable:true,key:'a',code:'KeyA'});
-                    else ev=new Event(type,{bubbles:true,cancelable:true});
-                    try{ inputElement.dispatchEvent(ev); }catch(_){}
-                });
-
-                if(window.location.hostname.includes('deepseek.com')){
-                    ['keydown','keypress','keyup'].forEach(t=>inputElement.dispatchEvent(tryCreateKeyboardEvent(t,{bubbles:true,cancelable:true,key:'a',code:'KeyA',which:65,keyCode:65})));
-                    inputElement.dispatchEvent(new Event('compositionstart',{bubbles:true}));
-                    inputElement.dispatchEvent(new Event('compositionupdate',{bubbles:true}));
-                    inputElement.dispatchEvent(new Event('compositionend',{bubbles:true}));
-                }
-
-                inputElement.focus();
-                if(inputElement.tagName && (inputElement.tagName.toLowerCase()==='textarea'||inputElement.type==='text')){
-                    try{ inputElement.setSelectionRange(finalPrompt.length,finalPrompt.length);}catch(_){}
-                } else if(inputElement.getAttribute && inputElement.getAttribute('contenteditable')==='true'){
-                    const range=document.createRange(); const sel=window.getSelection();
-                    if(sel&&inputElement.childNodes.length>0){ range.selectNodeContents(inputElement); range.collapse(false); sel.removeAllRanges(); sel.addRange(range);}
-                }
-
-                setTimeout(()=>{
-                    try{ inputElement.dispatchEvent(new Event('input',{bubbles:true})); }catch(_){}
-                    try{ inputElement.dispatchEvent(new Event('change',{bubbles:true})); }catch(_){}
-                },100);
-
-                // React/Angular 等轻量兜底（不含 Kimi/Claude，避免二次注入）
-                const specialSites=['deepseek.com','tongyi.com','yuanbao.tencent.com','aistudio.google.com','doubao.com'];
-                const currentSite=specialSites.find(site=>window.location.hostname.includes(site));
-                if(currentSite){
-                    setTimeout(()=>{
-                        const reactKey=Object.keys(inputElement).find(key=>key.startsWith('__reactInternalInstance')||key.startsWith('__reactFiber'));
-                        if(reactKey){
-                            try{
-                                const fiberNode=inputElement[reactKey];
-                                if(fiberNode&&fiberNode.memoizedProps&&typeof fiberNode.memoizedProps.onChange==='function'){
-                                    const fakeEvent={target:{value:finalPrompt},currentTarget:{value:finalPrompt},preventDefault:()=>{},stopPropagation:()=>{}};
-                                    fiberNode.memoizedProps.onChange(fakeEvent);
-                                }
-                            }catch(e){ console.log(`[PromptHelper] ${currentSite} React状态更新失败:`,e); }
-                        }
-                        setTimeout(()=>{ if('value' in inputElement && inputElement.value!==finalPrompt){ inputElement.value=finalPrompt; inputElement.dispatchEvent(new Event('input',{bubbles:true})); } },300);
-                    },500);
-                }
-
-                D.contentPanel.classList.add('hidden'); // 应用后收起
+            // 新增：快速应用默认模板（不打开主界面）
+            D.quickApplyButton.addEventListener('click', ()=>{
+                const tpl = (prompts[DEFAULT_TEMPLATE_ID] || defaultPrompts[DEFAULT_TEMPLATE_ID])?.template || '';
+                const res = getFinalFromChatByTemplateStr(tpl);
+                if(res.error==='no_template'){ alert(translations[currentLang].alertTemplateError); return; }
+                if(res.error==='no_input'){ alert(translations[currentLang].alertSubmitError); return; }
+                if(res.error==='no_user_input'){ alert(translations[currentLang].alertNoUserInput); return; }
+                applyPromptToChat(res.inputEl, res.final);
+                // 不展示主界面；若已展开则收起
+                document.querySelector('#prompt-helper-content')?.classList.add('hidden');
             });
 
             loadPrompts();
