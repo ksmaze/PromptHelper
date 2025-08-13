@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         PromptHelper
 // @namespace    http://tampermonkey.net/
-// @version      1.7.3
-// @description  PromptHelper：通用于 ChatGPT, Gemini, Claude, Kimi, DeepSeek, 通义、元宝、Google AI Studio、Grok、豆包 的侧边模板助手；主/设分离；导入/导出；从聊天栏读取并回填；Kimi/Claude 专项处理（覆盖、不重复、换行保真）。新增：站点默认模板（通配符、早保存优先）；“应用默认模板”一键套用站点默认/全局默认；修复并发覆盖（读-改-写）；Helper 按钮改蓝色以适配黑底站点。—— 本版：新增夜间模式（黑色系 UI），一键切换并持久化记忆；Claude 换行保真策略保持。—— 改进版：导入/导出增强（同名标准化、冲突策略、可选跳过重复内容、可选整包导入导出、schema/version 兼容、容错更清晰），且不改变默认行为。
+// @version      1.7.4
+// @description  PromptHelper：通用于 ChatGPT, Gemini, Claude, Kimi, DeepSeek, 通义、元宝、Google AI Studio、Grok、豆包 的侧边模板助手；主/设分离；导入/导出；从聊天栏读取并回填；Kimi/Claude 专项处理（覆盖、不重复、换行保真）。新增：站点默认模板（通配符、早保存优先）；“应用默认模板”一键套用站点默认/全局默认；修复并发覆盖（读-改-写）；Helper 按钮改蓝色以适配黑底站点。—— 本版：新增夜间模式（黑色系 UI），一键切换并持久化记忆；Claude 换行保真策略保持。—— 改进版：导入/导出增强（同名标准化、冲突策略、可选跳过重复内容、可选整包导入导出、schema/version 兼容、容错更清晰）；设置页标题改为“设置站点默认模板”；导出不再询问是否包含默认模板且默认不导出默认模板。
 // @author       Sauterne
 // @match        http://chat.openai.com/*
 // @match        https://chat.openai.com/*
@@ -94,11 +94,9 @@
     function normalizeName(name){ return String(name||'').trim(); }
     function normalizeKey(name){ return normalizeName(name).toLowerCase(); }
     function djb2Hash(str){
-        // 简单稳定哈希：只用于“完全相同内容”的快速判断
         str = String(str||'');
         let hash = 5381;
         for(let i=0;i<str.length;i++){ hash = ((hash << 5) + hash) + str.charCodeAt(i); hash |= 0; }
-        // 转无符号十六进制字符串
         return (hash >>> 0).toString(16);
     }
     function ensureUniqueName(baseName, existingSet){
@@ -109,7 +107,6 @@
         while(existingSet.has(`${baseName}${IMPORT_SUFFIX_BASE} ${i}`)) i++;
         return `${baseName}${IMPORT_SUFFIX_BASE} ${i}`;
     }
-    // 用“标准化集合”判断唯一性的重命名（不改变原 ensureUniqueName 在其他处的既有行为）
     function ensureUniqueNameNormalized(baseName, normalizedSet){
         let candidate = baseName;
         let idx = 1;
@@ -279,7 +276,7 @@ USER QUESTION (paste multi-paragraph content between the markers):
                 alertImportInvalid:"导入失败：文件格式无效或为空。",
                 alertImportDone:(added,renamed)=>`成功导入 ${added} 个模板（其中 ${renamed} 个已重命名）。`,
                 quickApplyBtn:"应用默认模板",
-                siteDefaultsTitle:"站点默认模板",
+                siteDefaultsTitle:"设置站点默认模板",
                 siteDefaultsList:"已保存规则",
                 sitePattern:"域名/通配符",
                 siteTemplate:"绑定模板",
@@ -316,7 +313,7 @@ USER QUESTION (paste multi-paragraph content between the markers):
                 alertImportInvalid:"Import failed: invalid or empty file.",
                 alertImportDone:(added,renamed)=>`Imported ${added} templates (${renamed} renamed to avoid conflicts).`,
                 quickApplyBtn:"Quick Apply",
-                siteDefaultsTitle:"Site Default Templates",
+                siteDefaultsTitle:"Set Site Default Templates",
                 siteDefaultsList:"Saved Rules",
                 sitePattern:"Domain / Wildcard",
                 siteTemplate:"Bound Template",
@@ -487,7 +484,7 @@ USER QUESTION (paste multi-paragraph content between the markers):
                 }
                 #prompt-helper-container[data-theme="dark"] #ph-lang-toggle:hover,
                 #prompt-helper-container[data-theme="dark"] #ph-settings-btn:hover,
-                #prompt-helper-container[data-theme="dark"] #ph-theme-btn:hover {
+                #prompt-helper-container #ph-theme-btn:hover {
                     background: #353b43 !important;
                 }
 
@@ -723,7 +720,6 @@ USER QUESTION (paste multi-paragraph content between the markers):
             setTimeout(()=>{URL.revokeObjectURL(url); a.remove();},0);
         }
         function ensureUniqueNameLegacy(baseName, existingSet){
-            // 兼容旧实现（保留原函数名 ensureUniqueName）在别处可能被使用
             return ensureUniqueName(baseName, existingSet);
         }
         function genId(prefix='id'){ return `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2,8)}`; }
@@ -738,7 +734,7 @@ USER QUESTION (paste multi-paragraph content between the markers):
             return [];
         }
         function getCurrentSiteConfig(){ const hostname=window.location.hostname; for(const key in siteConfigs){ if(hostname.includes(key)) return siteConfigs[key]; } return null; }
-        function resolveEditableTargetWrapper(el){ // wrapper for findInputElement
+        function resolveEditableTargetWrapper(el){
             return resolveEditableTarget(el);
         }
         function findInputElement(){
@@ -1105,7 +1101,6 @@ USER QUESTION (paste multi-paragraph content between the markers):
                 D.settingToggleWidthInput.value = uiSettings.toggleWidth;
                 D.settingToggleHeightInput.value = uiSettings.toggleHeight;
 
-                // 应用主题到容器
                 document.getElementById('prompt-helper-container')?.setAttribute('data-theme', currentTheme);
             };
 
@@ -1126,7 +1121,7 @@ USER QUESTION (paste multi-paragraph content between the markers):
                 updateThemeButtonUI();
             });
 
-            // 模板 CRUD（读-改-写，合并保存）
+            // 模板 CRUD
             D.templateSelect.addEventListener('change',displaySelectedPrompt);
             D.newBtn.addEventListener('click',()=>{
                 D.templateSelect.value='';
@@ -1152,7 +1147,6 @@ USER QUESTION (paste multi-paragraph content between the markers):
                     alert('保存失败：可能超出存储配额或序列化失败。\n' + (e&&e.message?e.message:String(e)));
                     return;
                 }
-                // 刷到内存并刷新 UI
                 const saved=GM_getValue(PROMPTS_STORE_KEY,null);
                 try{ prompts = JSON.parse(saved)||{}; }catch{ prompts = latest; }
                 updateUI();
@@ -1212,10 +1206,12 @@ USER QUESTION (paste multi-paragraph content between the markers):
                 applyUISettings(document.getElementById('prompt-helper-container'));
             });
 
-            // —— 导出（增强：可选包含默认模板 & 可选整包导出） —— //
+            // —— 导出（保持：不导出默认模板；仍询问是否导出整包） —— //
             D.exportBtn.addEventListener('click',()=>{
                 let latest=(function(){ let l={}; const s=GM_getValue(PROMPTS_STORE_KEY,null); if(s){ try{ l=JSON.parse(s)||{}; }catch{ l={}; } } if(!l[DEFAULT_TEMPLATE_ID]) l[DEFAULT_TEMPLATE_ID]=defaultPrompts[DEFAULT_TEMPLATE_ID]; return l; })();
-                const includeDefault = !!window.confirm('导出时是否“包含默认模板”？\n（建议否，保持与旧版一致）');
+
+                // 不再询问“是否包含默认模板”；默认固定为 false
+                const includeDefault = false;
                 const exportBundle = !!window.confirm('是否导出“整包配置”（站点规则 + UI 设置 + 主题/语言）？\n（取消=仅导出模板）');
 
                 const list=[];
@@ -1229,7 +1225,6 @@ USER QUESTION (paste multi-paragraph content between the markers):
 
                 let payload, filename;
                 if(exportBundle){
-                    // 站点规则按“模板名”导出，避免 id 失配
                     const siteRules = loadSiteDefaults();
                     const siteDefaultsByName = siteRules.map(r => ({
                         pattern: r.pattern,
@@ -1255,7 +1250,7 @@ USER QUESTION (paste multi-paragraph content between the markers):
                 alert(translations[currentLang].alertExportDone + filename);
             });
 
-            // —— 导入（增强：同名标准化/冲突策略/可选跳过重复/可选整包） —— //
+            // —— 导入（保持 1.9.1 的增强能力） —— //
             D.importBtn.addEventListener('click',()=> D.importFileInput.click());
             D.importFileInput.addEventListener('change',(evt)=>{
                 const file=evt.target.files && evt.target.files[0];
@@ -1267,13 +1262,11 @@ USER QUESTION (paste multi-paragraph content between the markers):
                         const text=String(reader.result||'').trim();
                         const parsed=text?JSON.parse(text):null;
 
-                        // 判定是否为 bundle
                         const isBundle = parsed && parsed.schema===EXPORT_BUNDLE_SCHEMA;
 
                         const arr=normalizeImportedList(parsed);
                         if(!arr.length){ alert(translations[currentLang].alertImportInvalid); D.importFileInput.value=''; return; }
 
-                        // 读取最新 prompts 与准备集合
                         let latest=(function(){ let l={}; const s=GM_getValue(PROMPTS_STORE_KEY,null); if(s){ try{ l=JSON.parse(s)||{}; }catch{ l={}; } } if(!l[DEFAULT_TEMPLATE_ID]) l[DEFAULT_TEMPLATE_ID]=defaultPrompts[DEFAULT_TEMPLATE_ID]; return l; })();
 
                         const existingNameSet = new Set(Object.values(latest).map(p => normalizeName(p?.name||'')));
@@ -1281,14 +1274,11 @@ USER QUESTION (paste multi-paragraph content between the markers):
                         const nameToId = {};
                         for(const id in latest){
                             const key = normalizeKey(latest[id]?.name||'');
-                            if(key) if(!(key in nameToId)) nameToId[key]=id; // 保留第一个
+                            if(key) if(!(key in nameToId)) nameToId[key]=id;
                         }
                         const existingContentHashes = new Set(Object.values(latest).map(p => djb2Hash(p?.template||'')));
 
-                        // 预扫描：是否存在同名冲突、内容重复
                         let hasNameConflict=false, hasDupContent=false;
-                        const incomingNormNames = new Set();
-                        const incomingContentHashes = new Set();
                         for(const item of arr){
                             const nm = normalizeName(item?.name||'');
                             const key = normalizeKey(nm);
@@ -1297,13 +1287,9 @@ USER QUESTION (paste multi-paragraph content between the markers):
                             if(!nm || !body) continue;
                             if(existingNormSet.has(key)) hasNameConflict=true;
                             if(existingContentHashes.has(hh)) hasDupContent=true;
-                            // 记录导入集中自身情况（不强制处理导入内部重名：沿用旧逻辑逐条处理）
-                            incomingNormNames.add(key);
-                            incomingContentHashes.add(hh);
                         }
 
-                        // 仅在确有冲突/重复时询问一次策略；用户取消/乱填则回到“重命名 + 不跳过重复”（旧行为）
-                        let conflictPolicy='rename'; // rename | skip | overwrite
+                        let conflictPolicy='rename';
                         if(hasNameConflict){
                             const ans = (window.prompt('检测到同名模板。\n选择导入策略：\nR=重命名（默认）  S=跳过  O=覆盖', 'R')||'').trim().toUpperCase();
                             if(ans==='S') conflictPolicy='skip';
@@ -1315,7 +1301,6 @@ USER QUESTION (paste multi-paragraph content between the markers):
                             skipDupByContent = !!window.confirm('检测到与现有模板“内容完全相同”的条目。\n是否跳过这些重复内容？\n（取消=不跳过，保持旧行为）');
                         }
 
-                        // 导入主循环
                         let added=0, renamed=0, overwritten=0, skippedByName=0, skippedByContent=0;
                         for(const item of arr){
                             if(!item) continue;
@@ -1336,11 +1321,9 @@ USER QUESTION (paste multi-paragraph content between the markers):
                                         latest[targetId] = { name: latest[targetId].name, template: body };
                                         overwritten++;
                                         existingContentHashes.add(hh);
-                                        continue; // 不新增
+                                        continue;
                                     }
-                                    // 保护默认模板：若目标是默认模板，降级为重命名
                                 }
-                                // 重命名策略（默认）
                                 const newName = ensureUniqueNameNormalized(name, existingNormSet);
                                 if(newName!==name) renamed++;
                                 name = newName;
@@ -1349,7 +1332,6 @@ USER QUESTION (paste multi-paragraph content between the markers):
                             const newId = genId('prompt');
                             latest[newId] = { name, template: body };
                             added++;
-                            // 刷新集合
                             existingNameSet.add(name);
                             existingNormSet.add(normalizeKey(name));
                             existingContentHashes.add(hh);
@@ -1357,7 +1339,6 @@ USER QUESTION (paste multi-paragraph content between the markers):
                             if(!(nk in nameToId)) nameToId[nk]=newId;
                         }
 
-                        // 写回
                         try{
                             GM_setValue(PROMPTS_STORE_KEY, JSON.stringify(latest));
                         }catch(e){
@@ -1366,17 +1347,13 @@ USER QUESTION (paste multi-paragraph content between the markers):
                             return;
                         }
 
-                        // 刷新内存与 UI
                         const saved=GM_getValue(PROMPTS_STORE_KEY,null);
                         try{ prompts = JSON.parse(saved)||{}; }catch{ prompts = latest; }
                         updateUI();
 
-                        // —— 若是 bundle：可选导入站点规则 & 设置 —— //
                         if(isBundle){
-                            // 站点规则 byName
                             if(Array.isArray(parsed.siteDefaultsByName) && parsed.siteDefaultsByName.length){
                                 if(window.confirm('检测到“站点默认模板”规则。是否导入这些规则？（按模板名匹配）')){
-                                    // 重新构建 name->id（标准化）映射（考虑刚刚导入的新模板）
                                     const nameToId2 = {};
                                     for(const id in prompts){
                                         const key2 = normalizeKey(prompts[id]?.name||'');
@@ -1389,8 +1366,7 @@ USER QUESTION (paste multi-paragraph content between the markers):
                                         const tname = normalizeName(r?.templateName||'');
                                         if(!pat || !tname) continue;
                                         const tid = nameToId2[normalizeKey(tname)];
-                                        if(!tid) continue; // 未匹配到模板（可能用户没导这条或改名）
-                                        // 避免重复：相同 pattern + templateId
+                                        if(!tid) continue;
                                         const exists = rules.some(x => normalizeName(x.pattern)===pat && x.templateId===tid);
                                         if(exists) continue;
                                         rules.push({ id: genId('map'), pattern: pat, templateId: tid, createdAt: Date.now() });
@@ -1407,7 +1383,6 @@ USER QUESTION (paste multi-paragraph content between the markers):
                                     }
                                 }
                             }
-                            // UI 设置/主题/语言
                             const wantSettings = (parsed.uiSettings || parsed.theme || parsed.lang) && window.confirm('检测到界面设置（位置/大小）与主题/语言。是否导入这些设置？');
                             if(wantSettings){
                                 try{
@@ -1423,7 +1398,6 @@ USER QUESTION (paste multi-paragraph content between the markers):
                                         currentTheme = parsed.theme;
                                         saveTheme(currentTheme);
                                         document.getElementById('prompt-helper-container')?.setAttribute('data-theme', currentTheme);
-                                        updateThemeButtonUI();
                                     }
                                     if(parsed.lang && (parsed.lang==='zh'||parsed.lang==='en')){
                                         currentLang = parsed.lang;
@@ -1436,7 +1410,6 @@ USER QUESTION (paste multi-paragraph content between the markers):
                             }
                         }
 
-                        // 汇总提示（保持旧提示的同时增加统计项）
                         const baseMsg = translations[currentLang].alertImportDone(added, renamed);
                         const extra = [];
                         if(overwritten) extra.push(`覆盖 ${overwritten}`);
