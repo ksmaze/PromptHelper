@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         PromptHelper
 // @namespace    http://tampermonkey.net/
-// @version      1.7.1
-// @description  PromptHelper：通用于 ChatGPT, Gemini, Claude, Kimi, DeepSeek, 通义、元宝、Google AI Studio、Grok、豆包 的侧边模板助手；主/设分离；导入/导出；从聊天栏读取并回填；Kimi/Claude 专项处理（覆盖、不重复、换行保真）。新增：站点默认模板（通配符、早保存优先）；“应用默认模板”一键套用站点默认/全局默认；修复并发覆盖（读-改-写）；Helper 按钮改蓝色以适配黑底站点。—— 本版：新增夜间模式（黑色系 UI），一键切换并持久化记忆；Claude 换行保真策略保持。
+// @version      1.7.2
+// @description  PromptHelper：通用于 ChatGPT, Gemini, Claude, Kimi, DeepSeek, 通义、元宝、Google AI Studio、Grok、豆包 的侧边模板助手；主/设分离；导入/导出；从聊天栏读取并回填；Kimi/Claude 专项处理（覆盖、不重复、换行保真）。站点默认模板（通配符、早保存优先）；“应用默认模板”一键套用站点默认/全局默认；修复并发覆盖（读-改-写）；Helper 按钮蓝色适配黑底站点；夜间模式可切换并持久化。本版：导入/导出升级为“打包”：模板 + 站点规则 + UI 按钮位置信息，向后兼容旧模板-only 文件，按读改写合并、规则追加、UI 即时应用与持久化，确保不影响现有站点填充逻辑。
 // @author       Sauterne
 // @match        http://chat.openai.com/*
 // @match        https://chat.openai.com/*
@@ -56,7 +56,8 @@
     const THEME_STORE_KEY = 'universal_prompt_helper_theme';
     const DEFAULT_UI = { top: 100, toggleWidth: 120, toggleHeight: 40 };
     const DEFAULT_TEMPLATE_ID = 'default_interactive';
-    const EXPORT_SCHEMA = 'prompthelper.templates.v1';
+    const EXPORT_SCHEMA_TEMPLATES = 'prompthelper.templates.v1'; // 兼容旧版
+    const EXPORT_SCHEMA_BUNDLE = 'prompthelper.bundle.v1';       // 新版打包
     const IMPORT_SUFFIX_BASE = ' (imported)';
 
     function loadUISettings(){
@@ -209,7 +210,8 @@ FINAL OUTPUT FORMAT（九段固定）：
 3) 来源与证据表（Sources Table）
 4) 去伪存真记录（Exclusion Log）
 5) 已确认事实清单（全部带 [S#]）
-6) 结论（最准确答案 + 置信度/范围）
+6) 逻辑论证链（逐步推导，步步有 [S#]）
+7) 结论（最准确答案 + 置信度/范围）
 8) 局限与更新触发条件
 9) 参考文献（按 [S#] 列完整引文，含链接与访问日期）
 
@@ -374,7 +376,7 @@ USER QUESTION (paste multi-paragraph content between the markers):
                     border-radius: 8px !important;
                     box-shadow: -2px 2px 10px rgba(0,0,0,0.1) !important;
                     padding: 14px !important;
-                    display: flex !important;
+                    display: flex !重要;
                     flex-direction: column !important;
                     gap: 10px !important;
                     transition: transform 0.3s ease-in-out, opacity 0.3s ease-in-out !important;
@@ -387,7 +389,7 @@ USER QUESTION (paste multi-paragraph content between the markers):
                     padding-bottom: 14px !important;
                 }
                 #prompt-helper-content.hidden { transform: translateX(100%) !important; opacity: 0 !important; pointer-events: none !important; }
-                #prompt-helper-content h3 { padding: 0 !important; font-size: 18px !important; color: var(--ph-header-text) !important; text-align: center !important; font-weight: bold !important; }
+                #prompt-helper-content h3 { padding: 0 !important; font-size: 18px !important; color: var(--ph-header-text) !重要; text-align: center !important; font-weight: bold !important; }
 
                 /* 主/设双页互斥 */
                 #prompt-helper-content[data-view="main"]    #ph-settings-view { display: none !important; }
@@ -566,123 +568,7 @@ USER QUESTION (paste multi-paragraph content between the markers):
             }
         }
 
-        function buildUI(){
-            const create=(tag,id,classes=[],attributes={},children=[])=>{
-                const el=document.createElement(tag);
-                if(id)el.id=id; if(classes.length)el.classList.add(...classes);
-                for(const k in attributes)el.setAttribute(k,attributes[k]);
-                for(const c of children)el.appendChild(c);
-                return el;
-            };
-            const D={};
-            const container=create('div','prompt-helper-container');
-
-            D.toggleButton=create('button','prompt-helper-toggle');
-            D.quickApplyButton=document.createElement('button');
-            D.quickApplyButton.id='prompt-helper-quickapply';
-
-            D.contentPanel=create('div','prompt-helper-content',['hidden']);
-            D.contentPanel.setAttribute('data-view','main');
-
-            // 头部
-            D.langToggleButton=create('button','ph-lang-toggle',[],{},[document.createTextNode('中/En')]);
-            D.title=document.createElement('h3'); D.title.id='ph-title';
-
-            D.themeButton=document.createElement('button'); D.themeButton.id='ph-theme-btn';
-            D.settingsButton=document.createElement('button'); D.settingsButton.id='ph-settings-btn';
-            D.settingsButton.appendChild(document.createTextNode('⚙️'));
-
-            D.collapseButton=create('button','ph-collapse-btn',[],{id:'ph-collapse-btn'},[document.createTextNode('\u00d7')]);
-
-            // 右侧按钮排列：主题切换 → 设置 → 关闭
-            const rightBox=create('div',null,['ph-header-right'],{},[D.themeButton, D.settingsButton, D.collapseButton]);
-            const header=create('div','ph-header',['ph-header'],{},[D.langToggleButton,D.title,rightBox]);
-
-            // 主视图
-            D.labelSelect=create('label','ph-label-select',[],{for:'ph-template-select'});
-            D.templateSelect=create('select','ph-template-select');
-            D.newBtn=create('button','ph-new-btn',['ph-btn-primary']);
-            D.saveBtn=create('button','ph-save-btn',['ph-btn-success']);
-            D.deleteBtn=create('button','ph-delete-btn',['ph-btn-danger']);
-            const section1=create('div',null,['ph-section'],{},[
-                D.labelSelect,D.templateSelect,
-                create('div',null,['ph-button-group'],{},[D.newBtn,D.saveBtn,D.deleteBtn])
-            ]);
-            D.labelName=create('label','ph-label-name',[],{for:'ph-template-name'});
-            D.templateNameInput=create('input','ph-template-name',[],{type:'text'});
-            D.labelContent=create('label','ph-label-content',[],{for:'ph-template-body'});
-            D.templateBodyTextarea=create('textarea','ph-template-body');
-            const section2=create('div',null,['ph-section'],{},[
-                D.labelName,D.templateNameInput,D.labelContent,D.templateBodyTextarea
-            ]);
-            D.copyBtn=create('button','ph-copy-btn',['ph-btn-secondary']);
-            D.submitBtn=create('button','ph-submit-btn',['ph-btn-primary']);
-            const sectionActions=create('div',null,['ph-section'],{},[
-                create('div',null,['ph-button-group'],{},[D.copyBtn,D.submitBtn])
-            ]);
-            D.mainView = create('div','ph-main-view',[],{},[section1,section2,sectionActions]);
-
-            // 设置视图 —— 基础
-            D.importBtn=create('button','ph-import-btn',['ph-btn-secondary']);
-            D.exportBtn=create('button','ph-export-btn',['ph-btn-secondary']);
-            D.importFileInput=create('input','ph-import-file',[],{type:'file',accept:'.json,application/json',style:'display:none'});
-            const sectionIO=create('div',null,['ph-section'],{},[
-                create('div',null,['ph-button-group'],{},[D.importBtn,D.exportBtn]),
-                D.importFileInput
-            ]);
-            D.settingsTitleEl = document.createElement('h4');
-            D.settingsTitleEl.id='ph-settings-title';
-            D.settingTopLabel = document.createElement('label'); D.settingTopLabel.htmlFor='ph-setting-top';
-            D.settingTopInput = document.createElement('input'); D.settingTopInput.id='ph-setting-top'; D.settingTopInput.type='number'; D.settingTopInput.min='0'; D.settingTopInput.step='1';
-            D.settingToggleWidthLabel = document.createElement('label'); D.settingToggleWidthLabel.htmlFor='ph-setting-toggle-width';
-            D.settingToggleWidthInput = document.createElement('input'); D.settingToggleWidthInput.id='ph-setting-toggle-width'; D.settingToggleWidthInput.type='number'; D.settingToggleWidthInput.min='40'; D.settingToggleWidthInput.step='1';
-            D.settingToggleHeightLabel = document.createElement('label'); D.settingToggleHeightLabel.htmlFor='ph-setting-toggle-height';
-            D.settingToggleHeightInput = document.createElement('input'); D.settingToggleHeightInput.id='ph-setting-toggle-height'; D.settingToggleHeightInput.type='number'; D.settingToggleHeightInput.min='24'; D.settingToggleHeightInput.step='1';
-            D.settingsSaveBtn = create('button','ph-settings-save',['ph-btn-success']);
-            D.settingsResetBtn = create('button','ph-settings-reset',['ph-btn-secondary']);
-            const settingsGrid = create('div','ph-settings-grid',['ph-grid'],{},[
-                D.settingTopLabel, D.settingTopInput,
-                D.settingToggleWidthLabel, D.settingToggleWidthInput,
-                D.settingToggleHeightLabel, D.settingToggleHeightInput
-            ]);
-            const settingsButtons = create('div',null,['ph-button-group'],{},[D.settingsSaveBtn, D.settingsResetBtn]);
-
-            // 设置视图 —— 站点默认模板
-            D.siteTitle = document.createElement('h4'); D.siteTitle.id='ph-site-title';
-            D.siteListLabel = document.createElement('label'); D.siteListLabel.htmlFor='ph-site-list';
-            D.siteList = document.createElement('select'); D.siteList.id='ph-site-list';
-            D.siteNewBtn = create('button','ph-site-new',['ph-btn-primary']);
-            D.siteSaveBtn = create('button','ph-site-save',['ph-btn-success']);
-            D.siteDeleteBtn = create('button','ph-site-del',['ph-btn-danger']);
-            const siteListRow = create('div',null,['ph-section'],{},[
-                D.siteListLabel, D.siteList,
-                create('div',null,['ph-button-group'],{},[D.siteNewBtn, D.siteSaveBtn, D.siteDeleteBtn])
-            ]);
-            D.sitePatternLabel = document.createElement('label'); D.sitePatternLabel.htmlFor='ph-site-pattern';
-            D.sitePatternInput = document.createElement('input'); D.sitePatternInput.id='ph-site-pattern'; D.sitePatternInput.type='text'; D.sitePatternInput.placeholder='e.g. *.example.com';
-            D.siteTplLabel = document.createElement('label'); D.siteTplLabel.htmlFor='ph-site-tpl';
-            D.siteTplSelect = document.createElement('select'); D.siteTplSelect.id='ph-site-tpl';
-            const siteEditGrid = create('div','ph-site-grid',['ph-grid'],{},[
-                D.sitePatternLabel, D.sitePatternInput,
-                D.siteTplLabel, D.siteTplSelect
-            ]);
-
-            D.backBtn = create('button','ph-back-btn',['ph-btn-secondary'],{},[document.createTextNode('←')]);
-
-            D.settingsView = document.createElement('div'); D.settingsView.id='ph-settings-view';
-            D.settingsView.append(
-                D.backBtn,
-                D.siteTitle, siteListRow, siteEditGrid,
-                D.settingsTitleEl, settingsGrid, settingsButtons,
-                sectionIO
-            );
-
-            D.contentPanel.append(header, D.mainView, D.settingsView);
-            const containerNodes = [D.toggleButton, D.quickApplyButton, D.contentPanel];
-            container.append(...containerNodes);
-            return {container,elements:D};
-        }
-
+        // —— 导出/导入相关工具（新增打包 schema + 兼容旧文件） ——
         function nowStamp(){
             const d=new Date(); const p=n=>String(n).padStart(2,'0');
             return `${d.getFullYear()}${p(d.getMonth()+1)}${p(d.getDate())}_${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}`;
@@ -713,10 +599,139 @@ USER QUESTION (paste multi-paragraph content between the markers):
             }
             return [];
         }
-        function getCurrentSiteConfig(){ const hostname=window.location.hostname; for(const key in siteConfigs){ if(hostname.includes(key)) return siteConfigs[key]; } return null; }
-        function resolveEditableTargetWrapper(el){ // wrapper for findInputElement
-            return resolveEditableTarget(el);
+        function isBundlePayload(obj){
+            if(!obj || typeof obj!=='object') return false;
+            if(obj.schema === EXPORT_SCHEMA_BUNDLE) return true;
+            const data = obj.data;
+            if(data && typeof data==='object' && (Array.isArray(data.templates) || Array.isArray(data.siteDefaults) || typeof data.uiSettings==='object')) return true;
+            return false;
         }
+        function buildExportBundlePayload(){
+            // 最新模板（含默认补齐）
+            let latestPrompts = {};
+            const s=GM_getValue(PROMPTS_STORE_KEY,null);
+            if(s){ try{ latestPrompts=JSON.parse(s)||{}; }catch{ latestPrompts={}; } }
+            if(!latestPrompts[DEFAULT_TEMPLATE_ID]) latestPrompts[DEFAULT_TEMPLATE_ID]=defaultPrompts[DEFAULT_TEMPLATE_ID];
+
+            // 导出非默认模板（保持既有行为）
+            const templates = [];
+            for(const id in latestPrompts){
+                if(id===DEFAULT_TEMPLATE_ID) continue;
+                const name=(latestPrompts[id]?.name||'').trim();
+                const template=(latestPrompts[id]?.template||'').trim();
+                if(name && template) templates.push({ name, template });
+            }
+
+            // 最新站点规则
+            const rules = loadSiteDefaults().map(r=>{
+                const tplName = latestPrompts[r.templateId]?.name || '';
+                return {
+                    pattern: r.pattern || '',
+                    templateName: tplName || null,  // 以模板名为主，以便导入后重新映射新 id
+                    templateId: r.templateId || null, // 兼容字段（辅助）
+                    createdAt: r.createdAt || null
+                };
+            });
+
+            // UI 设置
+            const ui = loadUISettings();
+
+            return {
+                app: 'PromptHelper',
+                schema: EXPORT_SCHEMA_BUNDLE,
+                version: 1,
+                exportedAt: new Date().toISOString(),
+                data: {
+                    templates,
+                    siteDefaults: rules,
+                    uiSettings: { top: ui.top, toggleWidth: ui.toggleWidth, toggleHeight: ui.toggleHeight }
+                }
+            };
+        }
+        function importBundleObject(payload, i18n){
+            // 解析 data 节点
+            const data = payload.data || {};
+            const incomingTemplates = Array.isArray(data.templates) ? data.templates : [];
+            const incomingRules = Array.isArray(data.siteDefaults) ? data.siteDefaults : [];
+            const incomingUI = (data.uiSettings && typeof data.uiSettings==='object') ? data.uiSettings : null;
+
+            // —— 1) 导入模板（读-改-写 + 重名处理） ——
+            let latest=(function(){ let l={}; const s=GM_getValue(PROMPTS_STORE_KEY,null); if(s){ try{ l=JSON.parse(s)||{}; }catch{ l={}; } } if(!l[DEFAULT_TEMPLATE_ID]) l[DEFAULT_TEMPLATE_ID]=defaultPrompts[DEFAULT_TEMPLATE_ID]; return l; })();
+            const existingNames=new Set(Object.values(latest).map(p=>p.name));
+            let added=0, renamed=0;
+
+            // name -> newId 映射（用于规则重映射）
+            const nameToNewId = {};
+
+            for(const item of incomingTemplates){
+                if(!item) continue;
+                const name=String(item.name||'').trim();
+                const body=String(item.template||'').trim();
+                if(!name || !body) continue;
+                let finalName=name;
+                if(existingNames.has(finalName)){ finalName=ensureUniqueName(name, existingNames); if(finalName!==name) renamed++; }
+                const id=genId('prompt');
+                latest[id]={name:finalName, template:body};
+                existingNames.add(finalName);
+                nameToNewId[name] = id;          // 原名 → 新 id
+                nameToNewId[finalName] = id;     // 处理重命名后的名也指向新 id
+                added++;
+            }
+            GM_setValue(PROMPTS_STORE_KEY, JSON.stringify(latest));
+            // 刷到内存对象
+            let promptsLatest = {};
+            try{ promptsLatest = JSON.parse(GM_getValue(PROMPTS_STORE_KEY,null)) || latest; }catch{ promptsLatest = latest; }
+
+            // —— 2) 导入站点规则（追加，不覆盖；模板 id 重新解析） ——
+            let rulesLatest = loadSiteDefaults();
+            let rulesAdded = 0;
+
+            function resolveTemplateIdForRule(rule){
+                // 优先：以模板名映射到刚导入的新 id
+                const byName = (rule && rule.templateName) ? nameToNewId[rule.templateName] : null;
+                if(byName && promptsLatest[byName]) return byName;
+                // 次选：当前库中存在同名模板
+                if(rule && rule.templateName){
+                    const foundId = Object.keys(promptsLatest).find(id => promptsLatest[id]?.name === rule.templateName);
+                    if(foundId) return foundId;
+                }
+                // 兼容字段：原 templateId 还存在且有效
+                if(rule && rule.templateId && promptsLatest[rule.templateId]) return rule.templateId;
+                // 兜底：默认模板
+                return DEFAULT_TEMPLATE_ID;
+            }
+
+            for(const r of incomingRules){
+                if(!r || !r.pattern) continue;
+                const resolvedId = resolveTemplateIdForRule(r);
+                rulesLatest.push({
+                    id: genId('map'),
+                    pattern: String(r.pattern||'').trim(),
+                    templateId: resolvedId,
+                    createdAt: r.createdAt || Date.now()
+                });
+                rulesAdded++;
+            }
+            saveSiteDefaults(rulesLatest);
+            siteDefaults = loadSiteDefaults();
+
+            // —— 3) 导入 UI 设置（存在则立即应用并持久化） ——
+            let uiApplied = false;
+            if(incomingUI && (typeof incomingUI.top==='number' || typeof incomingUI.toggleWidth==='number' || typeof incomingUI.toggleHeight==='number')){
+                const top = Number.isFinite(incomingUI.top) ? Math.max(0, incomingUI.top|0) : uiSettings.top;
+                const tw  = Number.isFinite(incomingUI.toggleWidth) ? Math.max(40, incomingUI.toggleWidth|0) : uiSettings.toggleWidth;
+                const th  = Number.isFinite(incomingUI.toggleHeight) ? Math.max(24, incomingUI.toggleHeight|0) : uiSettings.toggleHeight;
+                uiSettings = { top, toggleWidth: tw, toggleHeight: th };
+                saveUISettings(uiSettings);
+                applyUISettings(document.getElementById('prompt-helper-container'));
+                uiApplied = true;
+            }
+
+            return { added, renamed, rulesAdded, uiApplied };
+        }
+
+        function getCurrentSiteConfig(){ const hostname=window.location.hostname; for(const key in siteConfigs){ if(hostname.includes(key)) return siteConfigs[key]; } return null; }
+        function resolveEditableTargetWrapper(el){ return resolveEditableTarget(el); }
         function findInputElement(){
             const siteConfig=getCurrentSiteConfig(); if(!siteConfig){return null;}
             let inputElement=null;
@@ -922,6 +937,122 @@ USER QUESTION (paste multi-paragraph content between the markers):
             return { inputEl, final: templateStr.replace('{User Question}', userTyped) };
         }
 
+        function buildUI(){
+            const create=(tag,id,classes=[],attributes={},children=[])=>{
+                const el=document.createElement(tag);
+                if(id)el.id=id; if(classes.length)el.classList.add(...classes);
+                for(const k in attributes)el.setAttribute(k,attributes[k]);
+                for(const c of children)el.appendChild(c);
+                return el;
+            };
+            const D={};
+            const container=create('div','prompt-helper-container');
+
+            D.toggleButton=create('button','prompt-helper-toggle');
+            D.quickApplyButton=document.createElement('button');
+            D.quickApplyButton.id='prompt-helper-quickapply';
+
+            D.contentPanel=create('div','prompt-helper-content',['hidden']);
+            D.contentPanel.setAttribute('data-view','main');
+
+            // 头部
+            D.langToggleButton=create('button','ph-lang-toggle',[],{},[document.createTextNode('中/En')]);
+            D.title=document.createElement('h3'); D.title.id='ph-title';
+
+            D.themeButton=document.createElement('button'); D.themeButton.id='ph-theme-btn';
+            D.settingsButton=document.createElement('button'); D.settingsButton.id='ph-settings-btn';
+            D.settingsButton.appendChild(document.createTextNode('⚙️'));
+
+            D.collapseButton=create('button','ph-collapse-btn',[],{id:'ph-collapse-btn'},[document.createTextNode('\u00d7')]);
+
+            const rightBox=create('div',null,['ph-header-right'],{},[D.themeButton, D.settingsButton, D.collapseButton]);
+            const header=create('div','ph-header',['ph-header'],{},[D.langToggleButton,D.title,rightBox]);
+
+            // 主视图
+            D.labelSelect=create('label','ph-label-select',[],{for:'ph-template-select'});
+            D.templateSelect=create('select','ph-template-select');
+            D.newBtn=create('button','ph-new-btn',['ph-btn-primary']);
+            D.saveBtn=create('button','ph-save-btn',['ph-btn-success']);
+            D.deleteBtn=create('button','ph-delete-btn',['ph-btn-danger']);
+            const section1=create('div',null,['ph-section'],{},[
+                D.labelSelect,D.templateSelect,
+                create('div',null,['ph-button-group'],{},[D.newBtn,D.saveBtn,D.deleteBtn])
+            ]);
+            D.labelName=create('label','ph-label-name',[],{for:'ph-template-name'});
+            D.templateNameInput=create('input','ph-template-name',[],{type:'text'});
+            D.labelContent=create('label','ph-label-content',[],{for:'ph-template-body'});
+            D.templateBodyTextarea=create('textarea','ph-template-body');
+            const section2=create('div',null,['ph-section'],{},[
+                D.labelName,D.templateNameInput,D.labelContent,D.templateBodyTextarea
+            ]);
+            D.copyBtn=create('button','ph-copy-btn',['ph-btn-secondary']);
+            D.submitBtn=create('button','ph-submit-btn',['ph-btn-primary']);
+            const sectionActions=create('div',null,['ph-section'],{},[
+                create('div',null,['ph-button-group'],{},[D.copyBtn,D.submitBtn])
+            ]);
+            D.mainView = create('div','ph-main-view',[],{},[section1,section2,sectionActions]);
+
+            // 设置视图 —— 基础
+            D.importBtn=create('button','ph-import-btn',['ph-btn-secondary']);
+            D.exportBtn=create('button','ph-export-btn',['ph-btn-secondary']);
+            D.importFileInput=create('input','ph-import-file',[],{type:'file',accept:'.json,application/json',style:'display:none'});
+            const sectionIO=create('div',null,['ph-section'],{},[
+                create('div',null,['ph-button-group'],{},[D.importBtn,D.exportBtn]),
+                D.importFileInput
+            ]);
+            D.settingsTitleEl = document.createElement('h4');
+            D.settingsTitleEl.id='ph-settings-title';
+            D.settingTopLabel = document.createElement('label'); D.settingTopLabel.htmlFor='ph-setting-top';
+            D.settingTopInput = document.createElement('input'); D.settingTopInput.id='ph-setting-top'; D.settingTopInput.type='number'; D.settingTopInput.min='0'; D.settingTopInput.step='1';
+            D.settingToggleWidthLabel = document.createElement('label'); D.settingToggleWidthLabel.htmlFor='ph-setting-toggle-width';
+            D.settingToggleWidthInput = document.createElement('input'); D.settingToggleWidthInput.id='ph-setting-toggle-width'; D.settingToggleWidthInput.type='number'; D.settingToggleWidthInput.min='40'; D.settingToggleWidthInput.step='1';
+            D.settingToggleHeightLabel = document.createElement('label'); D.settingToggleHeightLabel.htmlFor='ph-setting-toggle-height';
+            D.settingToggleHeightInput = document.createElement('input'); D.settingToggleHeightInput.id='ph-setting-toggle-height'; D.settingToggleHeightInput.type='number'; D.settingToggleHeightInput.min='24'; D.settingToggleHeightInput.step='1';
+            D.settingsSaveBtn = create('button','ph-settings-save',['ph-btn-success']);
+            D.settingsResetBtn = create('button','ph-settings-reset',['ph-btn-secondary']);
+            const settingsGrid = create('div','ph-settings-grid',['ph-grid'],{},[
+                D.settingTopLabel, D.settingTopInput,
+                D.settingToggleWidthLabel, D.settingToggleWidthInput,
+                D.settingToggleHeightLabel, D.settingToggleHeightInput
+            ]);
+            const settingsButtons = create('div',null,['ph-button-group'],{},[D.settingsSaveBtn, D.settingsResetBtn]);
+
+            // 设置视图 —— 站点默认模板
+            D.siteTitle = document.createElement('h4'); D.siteTitle.id='ph-site-title';
+            D.siteListLabel = document.createElement('label'); D.siteListLabel.htmlFor='ph-site-list';
+            D.siteList = document.createElement('select'); D.siteList.id='ph-site-list';
+            D.siteNewBtn = create('button','ph-site-new',['ph-btn-primary']);
+            D.siteSaveBtn = create('button','ph-site-save',['ph-btn-success']);
+            D.siteDeleteBtn = create('button','ph-site-del',['ph-btn-danger']);
+            const siteListRow = create('div',null,['ph-section'],{},[
+                D.siteListLabel, D.siteList,
+                create('div',null,['ph-button-group'],{},[D.siteNewBtn, D.siteSaveBtn, D.siteDeleteBtn])
+            ]);
+            D.sitePatternLabel = document.createElement('label'); D.sitePatternLabel.htmlFor='ph-site-pattern';
+            D.sitePatternInput = document.createElement('input'); D.sitePatternInput.id='ph-site-pattern'; D.sitePatternInput.type='text'; D.sitePatternInput.placeholder='e.g. *.example.com';
+            D.siteTplLabel = document.createElement('label'); D.siteTplLabel.htmlFor='ph-site-tpl';
+            D.siteTplSelect = document.createElement('select'); D.siteTplSelect.id='ph-site-tpl';
+            const siteEditGrid = create('div','ph-site-grid',['ph-grid'],{},[
+                D.sitePatternLabel, D.sitePatternInput,
+                D.siteTplLabel, D.siteTplSelect
+            ]);
+
+            D.backBtn = create('button','ph-back-btn',['ph-btn-secondary'],{},[document.createTextNode('←')]);
+
+            D.settingsView = document.createElement('div'); D.settingsView.id='ph-settings-view';
+            D.settingsView.append(
+                D.backBtn,
+                D.siteTitle, siteListRow, siteEditGrid,
+                D.settingsTitleEl, settingsGrid, settingsButtons,
+                sectionIO
+            );
+
+            D.contentPanel.append(header, D.mainView, D.settingsView);
+            const containerNodes = [D.toggleButton, D.quickApplyButton, D.contentPanel];
+            container.append(...containerNodes);
+            return {container,elements:D};
+        }
+
         function buildAndInit(){
             const {container,elements:D}=buildUI();
 
@@ -1081,7 +1212,6 @@ USER QUESTION (paste multi-paragraph content between the markers):
                 D.settingToggleWidthInput.value = uiSettings.toggleWidth;
                 D.settingToggleHeightInput.value = uiSettings.toggleHeight;
 
-                // 应用主题到容器
                 document.getElementById('prompt-helper-container')?.setAttribute('data-theme', currentTheme);
             };
 
@@ -1123,7 +1253,6 @@ USER QUESTION (paste multi-paragraph content between the markers):
                 let id = D.templateSelect.value || `prompt_${Date.now()}`;
                 latest[id] = { name, template: templateText };
                 GM_setValue(PROMPTS_STORE_KEY, JSON.stringify(latest));
-                // 刷到内存并刷新 UI
                 const saved=GM_getValue(PROMPTS_STORE_KEY,null);
                 try{ prompts = JSON.parse(saved)||{}; }catch{ prompts = latest; }
                 updateUI();
@@ -1178,24 +1307,22 @@ USER QUESTION (paste multi-paragraph content between the markers):
                 applyUISettings(document.getElementById('prompt-helper-container'));
             });
 
-            // 导出
+            // 导出（升级为“打包导出”，兼容旧 UI 文案）
             D.exportBtn.addEventListener('click',()=>{
+                // 若没有任何非默认模板，仍给出与旧版相同的“没有可导出的模板”提示
                 let latest=(function(){ let l={}; const s=GM_getValue(PROMPTS_STORE_KEY,null); if(s){ try{ l=JSON.parse(s)||{}; }catch{ l={}; } } if(!l[DEFAULT_TEMPLATE_ID]) l[DEFAULT_TEMPLATE_ID]=defaultPrompts[DEFAULT_TEMPLATE_ID]; return l; })();
-                const list=[];
-                for(const id in latest){
-                    if(id===DEFAULT_TEMPLATE_ID) continue;
-                    const name=(latest[id]?.name||'').trim();
-                    const template=(latest[id]?.template||'').trim();
-                    if(name && template) list.push({name,template});
+                const hasNonDefault = Object.keys(latest).some(id => id!==DEFAULT_TEMPLATE_ID && (latest[id]?.name||'').trim() && (latest[id]?.template||'').trim());
+                if(!hasNonDefault){
+                    alert(translations[currentLang].alertExportEmpty);
+                    return;
                 }
-                if(!list.length){ alert(translations[currentLang].alertExportEmpty); return; }
-                const payload={ app:'PromptHelper', schema:EXPORT_SCHEMA, version:1, exportedAt:new Date().toISOString(), templates:list };
-                const filename=`prompthelper-templates-${nowStamp()}.json`;
+                const payload = buildExportBundlePayload();
+                const filename=`prompthelper-backup-${nowStamp()}.json`;
                 downloadJSON(filename, payload);
                 alert(translations[currentLang].alertExportDone + filename);
             });
 
-            // 导入（合并）
+            // 导入（兼容：bundle & 仅模板）
             D.importBtn.addEventListener('click',()=> D.importFileInput.click());
             D.importFileInput.addEventListener('change',(evt)=>{
                 const file=evt.target.files && evt.target.files[0];
@@ -1205,9 +1332,31 @@ USER QUESTION (paste multi-paragraph content between the markers):
                 reader.onload=()=>{
                     try{
                         const text=String(reader.result||'').trim();
-                        const parsed=text?JSON.parse(text):null;
+                        if(!text){ alert(translations[currentLang].alertImportInvalid); return; }
+                        let parsed = null;
+                        try{ parsed = JSON.parse(text); }catch(e){ parsed = null; }
+
+                        // 新版 bundle
+                        if(isBundlePayload(parsed)){
+                            const { added, renamed, rulesAdded, uiApplied } = importBundleObject(parsed, translations[currentLang]);
+                            // 刷新内存与 UI
+                            try{ prompts = JSON.parse(GM_getValue(PROMPTS_STORE_KEY,null)) || prompts; }catch{}
+                            siteDefaults = loadSiteDefaults();
+                            updateUI();
+                            // 统一提示（不新增翻译键，按语言输出）
+                            if(currentLang==='zh'){
+                                alert(`导入完成：模板 ${added} 个（重命名 ${renamed} 个）；规则 ${rulesAdded} 条；${uiApplied?'已应用按钮位置设置。':'无按钮位置设置或未变更。'}`);
+                            }else{
+                                alert(`Import complete: templates ${added} (renamed ${renamed}); rules ${rulesAdded}; ${uiApplied?'UI position applied.':'No UI position provided or unchanged.'}`);
+                            }
+                            D.importFileInput.value='';
+                            return;
+                        }
+
+                        // 老格式：仅模板
                         const arr=normalizeImportedList(parsed);
                         if(!arr.length){ alert(translations[currentLang].alertImportInvalid); return; }
+
                         let latest=(function(){ let l={}; const s=GM_getValue(PROMPTS_STORE_KEY,null); if(s){ try{ l=JSON.parse(s)||{}; }catch{ l={}; } } if(!l[DEFAULT_TEMPLATE_ID]) l[DEFAULT_TEMPLATE_ID]=defaultPrompts[DEFAULT_TEMPLATE_ID]; return l; })();
                         const existingNames=new Set(Object.values(latest).map(p=>p.name));
                         let added=0, renamed=0;
@@ -1363,10 +1512,7 @@ USER QUESTION (paste multi-paragraph content between the markers):
             window.promptHelperInitialized=true;
 
             injectStyles();
-            const {container} = (function(){
-                const res = buildAndInit();
-                return res||{};
-            })();
+            (function(){ buildAndInit(); })();
         }
 
         if(getCurrentSiteConfig()){ init(); }
