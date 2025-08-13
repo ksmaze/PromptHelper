@@ -1,12 +1,12 @@
 # PromptHelper - Universal AI Assistant Userscript
 
-![Version](https://img.shields.io/badge/Version-1.0-blue)
+![Version](https://img.shields.io/badge/Version-1.7.0-blue)
 ![License](https://img.shields.io/badge/License-MIT-green)
 ![Tampermonkey](https://img.shields.io/badge/Tampermonkey-Supported-orange)
 
-**Language**: [English](README.md) | [中文](README-zh.md)
+**Language**: [English](https://github.com/dongshuyan/PromptHelper) | [中文](https://github.com/dongshuyan/PromptHelper/blob/master/README-zh.md)
 
-A powerful universal userscript that provides unified Prompt template management functionality across multiple mainstream AI platforms. Features a sidebar interface with template management, content replacement, and one-click input, enabling efficient use of preset Prompt templates across various AI platforms.
+A powerful universal userscript that provides intelligent Prompt template management across 10 mainstream AI platforms. Features one-click template application, smart content reading from chat input, and advanced template management with site-specific defaults.
 
 ## ✨ Key Features
 
@@ -19,21 +19,27 @@ A powerful universal userscript that provides unified Prompt template management
 - **Tongyi Qianwen** (tongyi.com)
 - **Tencent Yuanbao** (yuanbao.tencent.com)
 - **Google AI Studio** (aistudio.google.com)
+- **Grok** (grok.com)
 - **Doubao** (doubao.com)
 
 ### 🎛️ Core Functionality
-- **Template Management**: Create, edit, delete, and save Prompt templates
-- **Bilingual Interface**: Support for Chinese/English language switching
-- **Dynamic Replacement**: Use `{User Question}` placeholder for dynamic content replacement
-- **One-Click Actions**: Support for copying to clipboard and direct input into platform text boxes
-- **Local Storage**: Template data automatically saved locally with cross-session persistence
+- **Intelligent Content Reading**: Automatically reads questions from chat input boxes
+- **Built-in Advanced Template**: Premium interactive template for enhanced AI responses
+- **One-Click Application**: "Apply Default Template" button for instant template usage
+- **Multi-Template Management**: Create, edit, and organize unlimited custom templates
+- **Site-Specific Defaults**: Set different default templates for different AI platforms
+- **Smart Template Rules**: Support wildcards and priority-based template selection
+- **Import/Export**: Backup and share your template collections
+- **Bilingual Interface**: Seamless Chinese/English language switching
+- **Customizable UI**: Adjustable button position, size, and appearance
 
 ### 🔧 Technical Highlights
-- **Shadow DOM Fix**: Automatically converts closed Shadow DOM to open mode
-- **Smart Input Detection**: Specialized input element selectors adapted for each platform
-- **Claude Linebreak Preservation**: Uses paste method to perfectly maintain linebreaks in Claude's ProseMirror editor
-- **Cross-Framework Compatibility**: Supports React, Angular, Vue, and other modern frontend frameworks
-- **Precise Event Simulation**: Uses optimal event triggering strategies for different platforms
+- **Smart Input Detection**: Advanced input element recognition across all platforms
+- **Claude Linebreak Preservation**: Perfect formatting retention for Claude's ProseMirror editor
+- **Kimi Optimization**: Specialized handling for Kimi's Lexical editor
+- **Shadow DOM Compatibility**: Seamless integration with modern web architectures
+- **Template Variable System**: Dynamic `{User Question}` placeholder replacement
+- **Concurrent Operation Safety**: Prevents data conflicts during simultaneous operations
 
 ## 🚀 Installation
 
@@ -41,149 +47,143 @@ A powerful universal userscript that provides unified Prompt template management
 Ensure your browser has the [Tampermonkey](https://www.tampermonkey.net/) extension installed.
 
 ### Installation Steps
-1. Copy the `PromptHelper.js` file content
-2. Open Tampermonkey dashboard
-3. Click "Create a new script"
-4. Paste the script content and save
-5. Visit any supported AI platform to start using
+1. Visit the script page: https://greasyfork.org/zh-CN/scripts/545456-prompthelper
+2. Click "Install this script"
+3. Visit any supported AI platform to start using
 
 ## 📖 User Guide
 
 ### Interface Overview
 
-After installing the script, you'll see a blue "Helper" button on the right side of the page:
+After installation, you'll see a blue "Helper" button on supported AI platforms:
 
-![Sidebar Button](pictures/small.png)
+![Default Sidebar Button](https://github.com/dongshuyan/PromptHelper/blob/master/pictures/P1.png)
 
-Clicking the button expands the full operation panel. The script supports bilingual Chinese/English interface:
+### One-Click Template Application
 
-**Chinese Interface:**
-![Chinese Interface](pictures/big-zh.png)
+The easiest way to use PromptHelper - simply type your question in the chat input, then click "Apply Default Template":
 
-**English Interface:**
-![English Interface](pictures/big-en.png)
+![One-Click Template Application](https://github.com/dongshuyan/PromptHelper/blob/master/pictures/P2.png)
 
-### Basic Operations
-1. **Open Assistant**: After visiting a supported AI platform, click the "Helper" button on the right side of the page
-2. **Switch Language**: Click the "中/En" button in the top-left corner of the panel to switch interface language
-3. **Select Template**: Choose from preset or custom templates in the dropdown menu
-4. **Input Question**: Enter your specific question in the "Your Question" area
-5. **Use Template**:
-   - Click "Copy to Clipboard": Copy the final Prompt to system clipboard
-   - Click "Fill into Input": Directly fill the Prompt into the platform's input box
+### Main Interface
 
-### Template Management
-- **New Template**: Click "New" button to create a blank template
-- **Edit Template**: Select an existing template and modify its name and content
-- **Save Template**: Click "Save" button to save changes
-- **Delete Template**: Select a template and click "Delete" button (confirmation required)
+Click the "Helper" button to access the full control panel with template management:
 
-### Variable Replacement Mechanism
-Use `{User Question}` as a placeholder in template content, which will be automatically replaced with the content you enter in the question area at runtime.
+![Helper Main Interface](https://github.com/dongshuyan/PromptHelper/blob/master/pictures/P3.png)
+
+### Multi-Template Selection
+
+Choose from multiple templates or create your own custom templates:
+
+![Multi-Template Selection](https://github.com/dongshuyan/PromptHelper/blob/master/pictures/P4.png)
+
+### Advanced Settings
+
+Access comprehensive settings for customization and template management:
+
+![Settings Interface](https://github.com/dongshuyan/PromptHelper/blob/master/pictures/P5.png)
+
+Features in settings:
+- Set default templates for specific websites
+- Customize Helper button position and size
+- Import/export template collections
+- Configure template rules and priorities
+
+### Template Rules Management
+
+Create sophisticated template rules with wildcard support:
+
+![Template Rules Management](https://github.com/dongshuyan/PromptHelper/blob/master/pictures/P6.png)
+
+### Rule Creation Tutorial
+
+Step-by-step guidance for creating custom template rules:
+
+![Rule Creation Tutorial](https://github.com/dongshuyan/PromptHelper/blob/master/pictures/P7.png)
+
+## 📋 Built-in Advanced Template
+
+**Interactive Research Template**: A sophisticated template that combines systematic thinking with web research capabilities. Features audit-grade research methodology, multi-perspective analysis, and citation-backed reasoning chains. Perfect for complex inquiries requiring thorough investigation and evidence-based responses.
+
+## 🎯 Usage Workflow
+
+### Basic Usage
+1. **Type your question** in the AI platform's chat input
+2. **Click "Apply Default Template"** for instant template application
+3. **Send the enhanced prompt** to get better AI responses
+
+### Advanced Usage
+1. **Set site-specific defaults** in settings for different AI platforms
+2. **Create custom templates** for specialized use cases
+3. **Use template rules** with wildcards for automatic template selection
+4. **Import/export templates** to share with team members
+
+## 🔍 Template Variables
+
+Use `{User Question}` as a placeholder in template content, which will be automatically replaced with the content from the chat input box.
 
 **Example Template:**
 ```
-Please provide a clear, structured, and comprehensive answer based on the following question.
+Please provide a comprehensive analysis of the following question with evidence-based reasoning:
 
-User Question:
-{User Question}
+Question: {User Question}
+
+Please structure your response with:
+1. Key insights
+2. Supporting evidence
+3. Practical implications
 ```
-
-### Quick Start
-
-#### First Time Use
-1. After installing the script, visit any supported AI platform
-2. Click the "Helper" button on the right side of the page to open the panel
-3. Try using the built-in "General Response Template"
-4. Enter in the question area: "How to make delicious Italian pasta?"
-5. Click "Fill into Input" to experience the one-click fill functionality
-
-#### Advanced Usage
-- **Create Custom Templates**: Design specialized Prompt templates based on your work needs
-- **Multi-Platform Sync**: Use the same template library across different AI platforms
-- **Linebreak Formatting**: Use linebreaks and blank lines in templates to improve Prompt readability
-
-## 📋 Built-in Templates
-
-The script comes with 1 powerful preset template:
-
-**Interactive Research Template**: An advanced template that combines systematic thinking with web research capabilities. Features audit-grade research methodology, multi-perspective analysis, and citation-backed reasoning chains. Perfect for complex inquiries requiring thorough investigation and evidence-based responses.
 
 ## 🎨 Interface Design
 
-- **Fixed Sidebar**: Right-side fixed position, doesn't interfere with original website layout
-- **Collapsible Design**: Click "×" button to collapse panel, saving screen space
-- **Smooth Animation**: Uses CSS3 transition for expand/collapse animations
-- **Responsive Layout**: Button groups with adaptive layout supporting different screen sizes
-- **Style Isolation**: Completely isolated CSS styles prevent conflicts with original websites
-
-## 🔍 FAQ
-
-### Q: Why do linebreaks disappear after filling content on some platforms?
-A: This is due to different editor implementations across platforms. The script has implemented a specialized linebreak preservation mechanism for Claude's ProseMirror editor to ensure complete linebreak format retention.
-
-### Q: Which browsers does the script support?
-A: Supports all mainstream browsers (Chrome, Firefox, Edge, Safari), but requires the Tampermonkey extension.
-
-### Q: Will template data be lost?
-A: No. All template data is saved in local browser storage unless you manually clear browser data or uninstall the script.
-
-### Q: Can I use it on multiple AI platforms simultaneously?
-A: Yes. The script automatically recognizes the current platform and enables corresponding functionality.
+- **Minimalist Sidebar**: Clean blue button that doesn't interfere with original websites
+- **Smart Positioning**: Customizable button placement and sizing
+- **Responsive Design**: Adapts to different screen sizes and layouts
+- **Theme Compatibility**: Works well with light and dark themes
+- **Style Isolation**: Completely isolated CSS prevents conflicts
 
 ## 🛠️ Development Information
 
 ### Tech Stack
 - **Pure JavaScript ES6+**: No external dependencies
-- **Tampermonkey API**: Data storage and style injection
-- **CSS3**: Flexbox layout and animation effects
-- **DOM API**: Native DOM manipulation and event handling
+- **Tampermonkey API**: Local storage and style injection
+- **Advanced DOM Manipulation**: Cross-platform input detection
+- **Modern Event Handling**: Optimized for different frameworks
 
 ### Core Technical Features
-1. **Shadow DOM Compatibility**: Automatically converts closed shadow DOM to open mode
-2. **Cross-Framework Support**: Supports React, Angular, Vue, and other modern frontend frameworks
-3. **Smart Input Recognition**: Multi-level input element finding strategy
-4. **Event Simulation Optimization**: Uses optimal event sequences for different platforms
-
-### Permission Description
-- `GM_setValue` / `GM_getValue`: Local storage for template data and settings
-- `GM_addStyle`: Inject custom styles to avoid conflicts with original websites
-- `@run-at document-start`: Run Shadow DOM fixes before page loading
+1. **Cross-Platform Compatibility**: Universal input element detection
+2. **Framework Support**: React, Angular, Vue, and vanilla JS compatibility
+3. **Smart Content Processing**: Intelligent text extraction and injection
+4. **Concurrent Operation Safety**: Thread-safe template operations
 
 ## 📝 Changelog
 
-### v1.0 (Current Version)
-**🎯 Complete Architecture Redesign**
-- **Complete Code Refactor**: Redesigned from scratch based on modern JavaScript standards, improving performance and stability
-- **Claude Linebreak Preservation**: Uses paste method to perfectly solve Claude ProseMirror editor linebreak format issues
-- **Smart HTML Conversion**: Converts plain text to `<p>` and `<br>` structures, perfectly adapting to rich text editors
-- **Shadow DOM Support**: Automatically handles closed Shadow DOM for Gemini and Google AI Studio
-- **Precise Platform Adaptation**: Each platform uses specially optimized input element selectors
-- **Event Optimization**: Minimizes event triggering, avoiding performance issues and conflicts
-- **Universal Platform Compatibility**: Perfect support for 8 major AI platforms
-
-**🔧 Major Technical Breakthroughs**
-- **OpenAI Linebreak Protection**: Fixes Chrome kernel ChatGPT textarea linebreak clearing issues
-- **React State Management**: Deep integration with React controlled components, solving state update issues for platforms like Tongyi Qianwen
-- **Angular Framework Adaptation**: Specialized optimization for Google AI Studio's Angular + Material Design architecture
-- **Lexical Editor Support**: Perfect adaptation for Kimi's Lexical rich text editor
-- **Multi-Level Fallback Mechanism**: Smart input element finding ensuring normal operation under various page structures
+### v1.7.0 (Current Version)
+**🎯 Major Architecture Upgrade**
+- **One-Click Template Application**: New "Apply Default Template" button for instant usage
+- **Smart Content Reading**: Automatically reads from chat input instead of separate text box
+- **Site-Specific Defaults**: Set different default templates for different AI platforms
+- **Template Rules System**: Advanced wildcard support and priority-based selection
+- **Enhanced UI**: Redesigned interface with improved usability
+- **Import/Export**: Complete template backup and sharing functionality
+- **Claude Optimization**: Perfect linebreak preservation for Claude interactions
+- **Expanded Platform Support**: Added Grok and Doubao compatibility
 
 ## 🛡️ Privacy & Security
 
-- **Local Storage**: All data is only saved locally in your browser, never uploaded to any server
-- **Open Source Transparency**: Code is completely open source, script behavior can be inspected at any time
-- **Minimal Permissions**: Only uses necessary Tampermonkey permissions
-- **No External Dependencies**: Doesn't rely on any third-party services or libraries
+- **Local Storage Only**: All data stays in your browser, never uploaded anywhere
+- **Open Source**: Complete transparency with GitHub repository
+- **Minimal Permissions**: Only uses necessary Tampermonkey privileges
+- **No External Dependencies**: Self-contained script with no third-party calls
 
 ## 🐛 Issue Reporting
 
-If you encounter issues during use, please provide the following information:
-- **Browser type and version**
+For support or bug reports, please provide:
+- **Browser and version**
 - **Tampermonkey version**
-- **Specific AI platform and URL**
-- **Error description and reproduction steps**
-- **Browser console error messages** (press F12 to view)
+- **AI platform and URL**
+- **Detailed error description**
+- **Console error messages** (F12 → Console)
 
 ## 📄 License
 
@@ -191,40 +191,20 @@ This project is open source under the [MIT License](https://opensource.org/licen
 
 ## 🤝 Contributing
 
-Contributions are welcome! You can:
+Contributions welcome! You can:
 - Report bugs or suggest features
-- Submit code improvements or new features
-- Improve documentation or add usage examples
-- Share your usage experiences and best practices
+- Submit code improvements
+- Improve documentation
+- Share usage examples and best practices
 
 ## 📞 Contact
 
 - **Author**: Sauterne
 - **Project URL**: https://github.com/dongshuyan/PromptHelper
+- **Script URL**: https://greasyfork.org/zh-CN/scripts/545456-prompthelper
 - **License**: MIT
-- **Latest Version**: v1.0
-
-## 🎯 Interactive Template Example
-
-Here's a demonstration of the built-in Interactive Research Template in action:
-
-### Question Input
-![Question Input](https://github.com/dongshuyan/PromptHelper/blob/master/pictures/Q1.png)
-
-### Initial Response
-The template guides the AI to perform systematic analysis:
-![Initial Response](https://github.com/dongshuyan/PromptHelper/blob/master/pictures/Q2.png)
-
-### Complete Analysis
-Final comprehensive response with citations and evidence:
-![Complete Analysis](https://github.com/dongshuyan/PromptHelper/blob/master/pictures/Q3.png)
-
-The Interactive Research Template demonstrates:
-- **Systematic approach**: Multi-gate verification process
-- **Evidence-based reasoning**: Citation-backed conclusions  
-- **Thorough investigation**: Web research integration
-- **Structured output**: Clear, audit-grade presentation
+- **Latest Version**: v1.7.0
 
 ---
 
-> **💡 Tip**: If you find this script useful, feel free to share it with more friends who might need it!
+> **💡 Tip**: PromptHelper makes AI interactions more efficient and effective. Try the one-click template application for immediate improvements to your AI conversations!

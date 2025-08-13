@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         PromptHelper
 // @namespace    http://tampermonkey.net/
-// @version      1.7.0
-// @description  PromptHelper：通用于 ChatGPT, Gemini, Claude, Kimi, DeepSeek, 通义、元宝、Google AI Studio、Grok、豆包 的侧边模板助手；主/设分离；导入/导出；从聊天栏读取并回填；Kimi/Claude 专项处理（覆盖、不重复、换行保真）。新增：站点默认模板（通配符、早保存优先）；“应用默认模板”一键套用站点默认/全局默认；修复并发覆盖（读-改-写）；Helper 按钮改蓝色以适配黑底站点可见性提升。—— 本版：Claude 站点换行保真（单/多换行都严格保留）。
+// @version      1.7.1
+// @description  PromptHelper：通用于 ChatGPT, Gemini, Claude, Kimi, DeepSeek, 通义、元宝、Google AI Studio、Grok、豆包 的侧边模板助手；主/设分离；导入/导出；从聊天栏读取并回填；Kimi/Claude 专项处理（覆盖、不重复、换行保真）。新增：站点默认模板（通配符、早保存优先）；“应用默认模板”一键套用站点默认/全局默认；修复并发覆盖（读-改-写）；Helper 按钮改蓝色以适配黑底站点。—— 本版：新增夜间模式（黑色系 UI），一键切换并持久化记忆；Claude 换行保真策略保持。
 // @author       Sauterne
 // @match        http://chat.openai.com/*
 // @match        https://chat.openai.com/*
@@ -53,6 +53,7 @@
     const PROMPTS_STORE_KEY = 'universal_prompt_helper_prompts';
     const LANG_STORE_KEY = 'universal_prompt_helper_lang';
     const SITE_DEFAULTS_STORE_KEY = 'universal_prompt_helper_site_defaults';
+    const THEME_STORE_KEY = 'universal_prompt_helper_theme';
     const DEFAULT_UI = { top: 100, toggleWidth: 120, toggleHeight: 40 };
     const DEFAULT_TEMPLATE_ID = 'default_interactive';
     const EXPORT_SCHEMA = 'prompthelper.templates.v1';
@@ -78,6 +79,14 @@
         GM_setValue(SITE_DEFAULTS_STORE_KEY, JSON.stringify(Array.isArray(arr)?arr:[]));
     }
 
+    function loadTheme(){
+        const t = GM_getValue(THEME_STORE_KEY, 'light');
+        return (t==='dark') ? 'dark' : 'light';
+    }
+    function saveTheme(t){
+        GM_setValue(THEME_STORE_KEY, (t==='dark')?'dark':'light');
+    }
+
     // 强制 open shadow
     const originalAttachShadow = Element.prototype.attachShadow;
     Element.prototype.attachShadow = function(options) {
@@ -96,7 +105,6 @@
         if(paras.length===0)paras.push('<p><br></p>');
         return paras.join('');
     }
-    // 严格按“每行一个段落”的 HTML（空行 -> <p><br></p>），适配 ProseMirror/Claude
     function textToProseMirrorParagraphHTML(text){
         const lines = text.split('\n');
         if(lines.length===0) return '<p><br></p>';
@@ -201,8 +209,7 @@ FINAL OUTPUT FORMAT（九段固定）：
 3) 来源与证据表（Sources Table）
 4) 去伪存真记录（Exclusion Log）
 5) 已确认事实清单（全部带 [S#]）
-6) 逻辑论证链（逐步推导，步步有 [S#]）
-7) 结论（最准确答案 + 置信度/范围）
+6) 结论（最准确答案 + 置信度/范围）
 8) 局限与更新触发条件
 9) 参考文献（按 [S#] 列完整引文，含链接与访问日期）
 
@@ -225,7 +232,8 @@ USER QUESTION (paste multi-paragraph content between the markers):
                 alertSaveSuccess:"模板已保存！", alertSaveError:"模板名称和内容不能为空！",
                 alertDeleteConfirm:"确定要删除模板", alertDeleteError:"请先选择一个要删除的模板！",
                 alertCopyError:"复制失败，请查看控制台。", alertSubmitError:"未找到当前网站的输入框。",
-                alertTemplateError:"请先选择或创建一个模板！", alertCannotDeleteDefault:"默认模板不可删除。",
+                alertTemplateError:"请先选择或创建一个模板！",
+                alertCannotDeleteDefault:"默认模板不可删除。",
                 alertNoUserInput:"聊天栏为空，请先在聊天栏输入内容再应用模板。",
                 settingsTitle:"基础设置",
                 settingTop:"容器顶部偏移（px）",
@@ -247,7 +255,9 @@ USER QUESTION (paste multi-paragraph content between the markers):
                 alertSiteTemplateRequired:"请选择要绑定的模板。",
                 alertSiteSelectFirst:"请先选择一条规则。",
                 alertSiteSaved:"规则已保存！",
-                alertSiteDeleted:"规则已删除！"
+                alertSiteDeleted:"规则已删除！",
+                themeToggleLightTitle:"切换夜间模式",
+                themeToggleDarkTitle:"切换日间模式"
             },
             en:{
                 toggleButton:"Helper",panelTitle:"PromptHelper",collapseTitle:"Collapse",
@@ -259,7 +269,8 @@ USER QUESTION (paste multi-paragraph content between the markers):
                 alertSaveSuccess:"Template saved!", alertSaveError:"Template name and content cannot be empty!",
                 alertDeleteConfirm:"Are you sure you want to delete the template", alertDeleteError:"Please select a template to delete first!",
                 alertCopyError:"Failed to copy. See console for details.", alertSubmitError:"Could not find the input box for the current site.",
-                alertTemplateError:"Please select or create a template first!", alertCannotDeleteDefault:"The default template cannot be deleted.",
+                alertTemplateError:"Please select or create a template first!",
+                alertCannotDeleteDefault:"The default template cannot be deleted.",
                 alertNoUserInput:"Input box is empty. Type your prompt first, then apply the template.",
                 settingsTitle:"Basic Settings",
                 settingTop:"Container top offset (px)",
@@ -281,13 +292,16 @@ USER QUESTION (paste multi-paragraph content between the markers):
                 alertSiteTemplateRequired:"Please choose a template to bind.",
                 alertSiteSelectFirst:"Please select a rule first.",
                 alertSiteSaved:"Rule saved!",
-                alertSiteDeleted:"Rule deleted!"
+                alertSiteDeleted:"Rule deleted!",
+                themeToggleLightTitle:"Toggle dark mode",
+                themeToggleDarkTitle:"Toggle light mode"
             }
         };
 
         let currentLang=GM_getValue(LANG_STORE_KEY,'zh');
         let uiSettings = loadUISettings();
         let siteDefaults = loadSiteDefaults();
+        let currentTheme = loadTheme(); // 'light' | 'dark'
 
         function injectStyles(){
             GM_addStyle(`
@@ -297,20 +311,39 @@ USER QUESTION (paste multi-paragraph content between the markers):
                     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif !important;
                     margin: 0 !important; padding: 0 !important; text-decoration: none !important; border: none !important; outline: none !important;
                 }
+                /* 主题变量（默认：明亮） */
                 #prompt-helper-container {
+                    --ph-bg: #f8f9fa;
+                    --ph-text: #333333;
+                    --ph-border: #dee2e6;
+                    --ph-input-bg: #ffffff;
+                    --ph-input-border: #adb5bd;
+                    --ph-header-text: #343a40;
+                    --ph-focus: rgba(0,123,255,.25);
                     position: fixed !important;
                     top: var(--ph-top, 100px) !important;
                     right: 0 !important;
                     z-index: 99999 !important;
                     font-size: 16px !important;
-                    color: #333 !important;
+                    color: var(--ph-text) !important;
                     line-height: 1.5 !important;
                 }
+                /* 夜间主题覆盖 */
+                #prompt-helper-container[data-theme="dark"] {
+                    --ph-bg: #1f2329;
+                    --ph-text: #e6e6e6;
+                    --ph-border: #3b4048;
+                    --ph-input-bg: #2b2f36;
+                    --ph-input-border: #4a4f57;
+                    --ph-header-text: #e6e6e6;
+                    --ph-focus: rgba(0,123,255,.35);
+                }
+
                 /* Helper 主按钮：蓝色增强对比 */
                 #prompt-helper-toggle {
                     width: var(--ph-toggle-width, 120px) !important;
                     height: var(--ph-toggle-height, 40px) !important;
-                    background-color: #007bff !important; color: white !important;
+                    background-color: #007bff !important; color: #fff !important;
                     border-radius: 10px 0 0 10px !important;
                     cursor: pointer !important;
                     display: flex !important; align-items: center !important; justify-content: center !important;
@@ -336,8 +369,8 @@ USER QUESTION (paste multi-paragraph content between the markers):
                     top: 0 !important;
                     right: var(--ph-toggle-width, 120px) !important;
                     width: 400px !important;
-                    background-color: #f8f9fa !important;
-                    border: 1px solid #dee2e6 !important;
+                    background-color: var(--ph-bg) !important;
+                    border: 1px solid var(--ph-border) !important;
                     border-radius: 8px !important;
                     box-shadow: -2px 2px 10px rgba(0,0,0,0.1) !important;
                     padding: 14px !important;
@@ -345,7 +378,7 @@ USER QUESTION (paste multi-paragraph content between the markers):
                     flex-direction: column !important;
                     gap: 10px !important;
                     transition: transform 0.3s ease-in-out, opacity 0.3s ease-in-out !important;
-                    color: #333 !important;
+                    color: var(--ph-text) !important;
                     text-align: left !important;
                     max-height: calc(100vh - var(--ph-top, 100px) - 40px) !important;
                     overflow-y: auto !important;
@@ -354,7 +387,7 @@ USER QUESTION (paste multi-paragraph content between the markers):
                     padding-bottom: 14px !important;
                 }
                 #prompt-helper-content.hidden { transform: translateX(100%) !important; opacity: 0 !important; pointer-events: none !important; }
-                #prompt-helper-content h3 { padding: 0 !important; font-size: 18px !important; color: #343a40 !important; text-align: center !important; font-weight: bold !important; }
+                #prompt-helper-content h3 { padding: 0 !important; font-size: 18px !important; color: var(--ph-header-text) !important; text-align: center !important; font-weight: bold !important; }
 
                 /* 主/设双页互斥 */
                 #prompt-helper-content[data-view="main"]    #ph-settings-view { display: none !important; }
@@ -373,10 +406,10 @@ USER QUESTION (paste multi-paragraph content between the markers):
                     -moz-appearance: auto !important;
                     width: 100% !important;
                     padding: 8px !important;
-                    border: 1px solid #adb5bd !important;
+                    border: 1px solid var(--ph-input-border) !important;
                     border-radius: 6px !important;
-                    background-color: #ffffff !important;
-                    color: #333 !important;
+                    background-color: var(--ph-input-bg) !important;
+                    color: var(--ph-text) !important;
                     line-height: 1.5 !important;
                     background-clip: padding-box !important;
                 }
@@ -386,7 +419,7 @@ USER QUESTION (paste multi-paragraph content between the markers):
                 #prompt-helper-content input:focus,
                 #prompt-helper-content textarea:focus {
                     border-color: #80bdff !important;
-                    box-shadow: 0 0 0 3px rgba(0,123,255,.25) !important;
+                    box-shadow: 0 0 0 3px var(--ph-focus) !important;
                     outline: none !important;
                 }
 
@@ -406,11 +439,29 @@ USER QUESTION (paste multi-paragraph content between the markers):
                 #prompt-helper-container .ph-header { display: flex !important; justify-content: space-between !important; align-items: center !important; margin-bottom: 6px !important; padding: 0 !important; }
                 #prompt-helper-container .ph-header-right { display: flex !important; align-items: center !important; gap: 8px !important; }
                 #prompt-helper-container #ph-collapse-btn { font-size: 24px !important; cursor: pointer !important; color: #6c757d !important; background: none !important; padding: 0 5px !important; line-height: 1 !important; }
-                #prompt-helper-container #ph-lang-toggle { font-size: 12px !important; color: #007bff !important; background: none !important; border: 1px solid #007bff !important; padding: 2px 6px !important; border-radius: 4px !important; cursor: pointer !important; }
 
-                /* 设置按钮 */
-                #prompt-helper-container #ph-settings-btn { font-size: 12px !important; color: #6c757d !important; background: #fff !important; border: 1px solid #ced4da !important; padding: 2px 8px !important; border-radius: 4px !important; cursor: pointer !important; }
-                #prompt-helper-container #ph-settings-btn:hover { background: #f1f3f5 !important; }
+                /* 语言/设置/主题按钮（随主题变色） */
+                #prompt-helper-container #ph-lang-toggle,
+                #prompt-helper-container #ph-settings-btn,
+                #prompt-helper-container #ph-theme-btn {
+                    font-size: 12px !important;
+                    color: var(--ph-text) !important;
+                    background: var(--ph-input-bg) !important;
+                    border: 1px solid var(--ph-input-border) !important;
+                    padding: 2px 8px !important;
+                    border-radius: 4px !important;
+                    cursor: pointer !important;
+                }
+                #prompt-helper-container #ph-lang-toggle:hover,
+                #prompt-helper-container #ph-settings-btn:hover,
+                #prompt-helper-container #ph-theme-btn:hover {
+                    background: rgba(0,0,0,0.06) !important;
+                }
+                #prompt-helper-container[data-theme="dark"] #ph-lang-toggle:hover,
+                #prompt-helper-container[data-theme="dark"] #ph-settings-btn:hover,
+                #prompt-helper-container[data-theme="dark"] #ph-theme-btn:hover {
+                    background: #353b43 !important;
+                }
 
                 /* 设置页 */
                 #prompt-helper-container #ph-settings-view { display: flex !important; flex-direction: column !important; gap: 10px !important; }
@@ -476,7 +527,6 @@ USER QUESTION (paste multi-paragraph content between the markers):
                 sel.addRange(range);
 
                 if(mode === 'html-direct'){
-                    // Claude 专用：直接插入严格段落 HTML，确保单/多换行都保真
                     const html = pmStrict ? textToProseMirrorParagraphHTML(text)
                                           : textToHtmlPreserveBlankLines(text);
                     let ok = false;
@@ -516,8 +566,6 @@ USER QUESTION (paste multi-paragraph content between the markers):
             }
         }
 
-        // —— UI 构建、工具函数、站点默认模板匹配、并发安全存储 ……（下略：与上一版一致，保持不变） —— //
-
         function buildUI(){
             const create=(tag,id,classes=[],attributes={},children=[])=>{
                 const el=document.createElement(tag);
@@ -539,9 +587,15 @@ USER QUESTION (paste multi-paragraph content between the markers):
             // 头部
             D.langToggleButton=create('button','ph-lang-toggle',[],{},[document.createTextNode('中/En')]);
             D.title=document.createElement('h3'); D.title.id='ph-title';
-            D.settingsButton=create('button','ph-settings-btn',[],{id:'ph-settings-btn',title:''},[document.createTextNode('⚙️')]);
+
+            D.themeButton=document.createElement('button'); D.themeButton.id='ph-theme-btn';
+            D.settingsButton=document.createElement('button'); D.settingsButton.id='ph-settings-btn';
+            D.settingsButton.appendChild(document.createTextNode('⚙️'));
+
             D.collapseButton=create('button','ph-collapse-btn',[],{id:'ph-collapse-btn'},[document.createTextNode('\u00d7')]);
-            const rightBox=create('div',null,['ph-header-right'],{},[D.settingsButton,D.collapseButton]);
+
+            // 右侧按钮排列：主题切换 → 设置 → 关闭
+            const rightBox=create('div',null,['ph-header-right'],{},[D.themeButton, D.settingsButton, D.collapseButton]);
             const header=create('div','ph-header',['ph-header'],{},[D.langToggleButton,D.title,rightBox]);
 
             // 主视图
@@ -660,6 +714,9 @@ USER QUESTION (paste multi-paragraph content between the markers):
             return [];
         }
         function getCurrentSiteConfig(){ const hostname=window.location.hostname; for(const key in siteConfigs){ if(hostname.includes(key)) return siteConfigs[key]; } return null; }
+        function resolveEditableTargetWrapper(el){ // wrapper for findInputElement
+            return resolveEditableTarget(el);
+        }
         function findInputElement(){
             const siteConfig=getCurrentSiteConfig(); if(!siteConfig){return null;}
             let inputElement=null;
@@ -680,7 +737,7 @@ USER QUESTION (paste multi-paragraph content between the markers):
                     if(inputElement) break;
                 }
             }
-            inputElement = resolveEditableTarget(inputElement);
+            inputElement = resolveEditableTargetWrapper(inputElement);
             return inputElement;
         }
         function getTextFromEditable(el){
@@ -705,22 +762,6 @@ USER QUESTION (paste multi-paragraph content between the markers):
             if(!host || !pat) return false;
             const re = patternToRegex(pat);
             return re.test(String(host).toLowerCase());
-        }
-
-        function getActiveDefaultTemplateId(prompts){
-            const host = location.hostname.toLowerCase();
-            for(const rule of siteDefaults){
-                if(rule && matchHostWithPattern(host, rule.pattern)){
-                    if(rule.templateId && prompts[rule.templateId]){
-                        return rule.templateId;
-                    }
-                }
-            }
-            return DEFAULT_TEMPLATE_ID;
-        }
-        function getActiveDefaultTemplateString(prompts){
-            const id = getActiveDefaultTemplateId(prompts);
-            return (prompts[id]?.template) || (defaultPrompts[DEFAULT_TEMPLATE_ID]?.template)||'';
         }
 
         function applyPromptToChat(inputElement, finalPrompt){
@@ -787,7 +828,6 @@ USER QUESTION (paste multi-paragraph content between the markers):
                 if(isKimiSite()){
                     replaceContentEditable(inputElement, finalPrompt, { mode: 'paste-only', clearBefore: true });
                 } else if(isClaudeSite()){
-                    // ★ 修复点：Claude 用 html-direct + pmStrict，确保回行 1:1 保留
                     replaceContentEditable(inputElement, finalPrompt, { mode: 'html-direct', clearBefore: true, pmStrict: true });
                 } else if(location.hostname.includes('claude.ai')||location.hostname.includes('fuclaude.com')){
                     pasteIntoProseMirror(inputElement,finalPrompt,{pmStrict:true});
@@ -882,11 +922,10 @@ USER QUESTION (paste multi-paragraph content between the markers):
             return { inputEl, final: templateStr.replace('{User Question}', userTyped) };
         }
 
-        // ====== 其余逻辑：UI 构建、并发安全的模板与站点规则存储、导入导出、快速应用等（与上一版 1.8.0 完全一致，未改动） ======
         function buildAndInit(){
             const {container,elements:D}=buildUI();
 
-            const addToDOM=()=>{ if(document.body){ document.body.appendChild(container); applyUISettings(container);} else { setTimeout(addToDOM,100);} };
+            const addToDOM=()=>{ if(document.body){ document.body.appendChild(container); applyUISettings(container); container.setAttribute('data-theme', currentTheme);} else { setTimeout(addToDOM,100);} };
             addToDOM();
 
             function loadPromptsLatest(){
@@ -990,12 +1029,25 @@ USER QUESTION (paste multi-paragraph content between the markers):
                 displaySelectedPrompt();
             }
 
+            function updateThemeButtonUI(){
+                const t = translations[currentLang];
+                if(currentTheme==='dark'){
+                    D.themeButton.textContent = '☀️';
+                    D.themeButton.title = t.themeToggleDarkTitle;
+                }else{
+                    D.themeButton.textContent = '🌙';
+                    D.themeButton.title = t.themeToggleLightTitle;
+                }
+            }
+
             const updateUI=()=>{
                 const t=translations[currentLang];
                 D.toggleButton.textContent=t.toggleButton; D.title.textContent=t.panelTitle;
                 D.collapseButton.title=t.collapseTitle;
                 D.settingsButton.title = t.settingsTitle;
                 D.quickApplyButton.textContent = t.quickApplyBtn;
+
+                updateThemeButtonUI();
 
                 D.labelSelect.textContent=t.selectTemplate; D.newBtn.textContent=t.newBtn;
                 D.saveBtn.textContent=t.saveBtn; D.deleteBtn.textContent=t.deleteBtn;
@@ -1028,6 +1080,9 @@ USER QUESTION (paste multi-paragraph content between the markers):
                 D.settingTopInput.value = uiSettings.top;
                 D.settingToggleWidthInput.value = uiSettings.toggleWidth;
                 D.settingToggleHeightInput.value = uiSettings.toggleHeight;
+
+                // 应用主题到容器
+                document.getElementById('prompt-helper-container')?.setAttribute('data-theme', currentTheme);
             };
 
             updateUI();
@@ -1039,7 +1094,15 @@ USER QUESTION (paste multi-paragraph content between the markers):
             D.settingsButton.addEventListener('click', ()=> D.contentPanel.setAttribute('data-view','settings'));
             D.backBtn.addEventListener('click', ()=> D.contentPanel.setAttribute('data-view','main'));
 
-            // 模板 CRUD（读-改-写）
+            // 主题切换（持久化）
+            D.themeButton.addEventListener('click', ()=>{
+                currentTheme = (currentTheme==='dark') ? 'light' : 'dark';
+                saveTheme(currentTheme);
+                document.getElementById('prompt-helper-container')?.setAttribute('data-theme', currentTheme);
+                updateThemeButtonUI();
+            });
+
+            // 模板 CRUD（读-改-写，合并保存）
             D.templateSelect.addEventListener('change',displaySelectedPrompt);
             D.newBtn.addEventListener('click',()=>{
                 D.templateSelect.value='';
@@ -1052,7 +1115,7 @@ USER QUESTION (paste multi-paragraph content between the markers):
                 const name=D.templateNameInput.value.trim();
                 const templateText=D.templateBodyTextarea.value.trim();
                 if(!name||!templateText){ alert(translations[currentLang].alertSaveError); return; }
-                let latest = (function(){ // 读最新
+                let latest = (function(){
                     let l={}; const s=GM_getValue(PROMPTS_STORE_KEY,null); if(s){ try{ l=JSON.parse(s)||{}; }catch{ l={}; } }
                     if(!l[DEFAULT_TEMPLATE_ID]) l[DEFAULT_TEMPLATE_ID]=defaultPrompts[DEFAULT_TEMPLATE_ID];
                     return l;
@@ -1060,7 +1123,9 @@ USER QUESTION (paste multi-paragraph content between the markers):
                 let id = D.templateSelect.value || `prompt_${Date.now()}`;
                 latest[id] = { name, template: templateText };
                 GM_setValue(PROMPTS_STORE_KEY, JSON.stringify(latest));
-                prompts = latest;
+                // 刷到内存并刷新 UI
+                const saved=GM_getValue(PROMPTS_STORE_KEY,null);
+                try{ prompts = JSON.parse(saved)||{}; }catch{ prompts = latest; }
                 updateUI();
                 D.templateSelect.value=id; displaySelectedPrompt();
                 alert(`${translations[currentLang].alertSaveSuccess} "${name}"`);
@@ -1074,7 +1139,8 @@ USER QUESTION (paste multi-paragraph content between the markers):
                     delete latest[id];
                     if(!latest[DEFAULT_TEMPLATE_ID]) latest[DEFAULT_TEMPLATE_ID]=defaultPrompts[DEFAULT_TEMPLATE_ID];
                     GM_setValue(PROMPTS_STORE_KEY, JSON.stringify(latest));
-                    prompts = latest;
+                    const saved=GM_getValue(PROMPTS_STORE_KEY,null);
+                    try{ prompts = JSON.parse(saved)||{}; }catch{ prompts = latest; }
                     updateUI();
                     D.templateSelect.value=DEFAULT_TEMPLATE_ID;
                     displaySelectedPrompt();
@@ -1094,7 +1160,7 @@ USER QUESTION (paste multi-paragraph content between the markers):
                 }).catch(err=>{ console.error('Copy failed:',err); alert(translations[currentLang].alertCopyError); });
             });
 
-            // 设置保存/重置
+            // 基础设置保存/重置
             D.settingsSaveBtn.addEventListener('click', ()=>{
                 const top = Math.max(0, parseInt(D.settingTopInput.value||DEFAULT_UI.top,10));
                 const tw = Math.max(40, parseInt(D.settingToggleWidthInput.value||DEFAULT_UI.toggleWidth,10));
@@ -1158,7 +1224,8 @@ USER QUESTION (paste multi-paragraph content between the markers):
                             added++;
                         }
                         GM_setValue(PROMPTS_STORE_KEY, JSON.stringify(latest));
-                        prompts = latest;
+                        const saved=GM_getValue(PROMPTS_STORE_KEY,null);
+                        try{ prompts = JSON.parse(saved)||{}; }catch{ prompts = latest; }
                         updateUI();
                         alert(translations[currentLang].alertImportDone(added,renamed));
                         D.importFileInput.value='';
@@ -1202,21 +1269,9 @@ USER QUESTION (paste multi-paragraph content between the markers):
                 saveSiteDefaults(latest);
 
                 refreshSiteDefaultsFromStore();
-                (function populate(){ // 刷新 UI
-                    const t = translations[currentLang];
-                    D.siteList.textContent='';
-                    const noneOpt=document.createElement('option');
-                    noneOpt.value=''; noneOpt.textContent='-- ' + t.siteDefaultsList + ' --';
-                    D.siteList.appendChild(noneOpt);
-                    siteDefaults.forEach(rule=>{
-                        const name = prompts[rule.templateId]?.name || `[${rule.templateId}]`;
-                        const opt=document.createElement('option');
-                        opt.value=rule.id; opt.textContent=`${rule.pattern}  →  ${name}`;
-                        D.siteList.appendChild(opt);
-                    });
-                })();
+                populateSiteList();
                 alert(t.alertSiteSaved);
-                // 主界面默认可能变化
+
                 const activeId = (function(promptsIn){
                     const host = location.hostname.toLowerCase();
                     for(const rule of siteDefaults){
@@ -1239,23 +1294,12 @@ USER QUESTION (paste multi-paragraph content between the markers):
                 saveSiteDefaults(latest);
 
                 siteDefaults = loadSiteDefaults();
-                (function populate(){
-                    const t = translations[currentLang];
-                    D.siteList.textContent='';
-                    const noneOpt=document.createElement('option');
-                    noneOpt.value=''; noneOpt.textContent='-- ' + t.siteDefaultsList + ' --';
-                    D.siteList.appendChild(noneOpt);
-                    siteDefaults.forEach(rule=>{
-                        const name = prompts[rule.templateId]?.name || `[${rule.templateId}]`;
-                        const opt=document.createElement('option');
-                        opt.value=rule.id; opt.textContent=`${rule.pattern}  →  ${name}`;
-                        D.siteList.appendChild(opt);
-                    });
-                })();
+                populateSiteList();
                 D.siteList.value='';
                 D.sitePatternInput.value='';
                 if(D.siteTplSelect.options.length>0) D.siteTplSelect.selectedIndex=0;
                 alert(t.alertSiteDeleted);
+
                 const activeId = (function(promptsIn){
                     const host = location.hostname.toLowerCase();
                     for(const rule of siteDefaults){
@@ -1291,7 +1335,19 @@ USER QUESTION (paste multi-paragraph content between the markers):
                 D.contentPanel.classList.add('hidden');
             });
             D.quickApplyButton.addEventListener('click', ()=>{
-                const tpl = getActiveDefaultTemplateString(prompts);
+                const promptsSaved=GM_getValue(PROMPTS_STORE_KEY,null);
+                let promptsLatest = prompts;
+                if(promptsSaved){ try{ promptsLatest = JSON.parse(promptsSaved)||prompts; }catch{} }
+                const activeId = (function(promptsIn){
+                    const host = location.hostname.toLowerCase();
+                    for(const rule of siteDefaults){
+                        if(rule && matchHostWithPattern(host, rule.pattern)){
+                            if(rule.templateId && promptsIn[rule.templateId]) return rule.templateId;
+                        }
+                    }
+                    return DEFAULT_TEMPLATE_ID;
+                })(promptsLatest);
+                const tpl = (promptsLatest[activeId]?.template) || (defaultPrompts[DEFAULT_TEMPLATE_ID]?.template)||'';
                 const res = getFinalFromChatByTemplateStr(tpl);
                 if(res.error==='no_template'){ alert(translations[currentLang].alertTemplateError); return; }
                 if(res.error==='no_input'){ alert(translations[currentLang].alertSubmitError); return; }
@@ -1307,7 +1363,10 @@ USER QUESTION (paste multi-paragraph content between the markers):
             window.promptHelperInitialized=true;
 
             injectStyles();
-            buildAndInit();
+            const {container} = (function(){
+                const res = buildAndInit();
+                return res||{};
+            })();
         }
 
         if(getCurrentSiteConfig()){ init(); }
