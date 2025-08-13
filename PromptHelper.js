@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         PromptHelper
 // @namespace    http://tampermonkey.net/
-// @version      1.6.2
-// @description  PromptHelper：通用于 ChatGPT, Gemini, Claude, Kimi, DeepSeek, 通义、元宝、Google AI Studio、Grok、豆包 的侧边模板助手；主/设分离；导入/导出；从聊天栏读取并回填；Kimi/Claude 专项处理（覆盖、不重复、换行保真）。新增：Helper 下方“应用默认模板”一键套用默认模板并直接填入聊天栏。
+// @version      1.7.0
+// @description  PromptHelper：通用于 ChatGPT, Gemini, Claude, Kimi, DeepSeek, 通义、元宝、Google AI Studio、Grok、豆包 的侧边模板助手；主/设分离；导入/导出；从聊天栏读取并回填；Kimi/Claude 专项处理（覆盖、不重复、换行保真）。新增：站点默认模板（通配符、早保存优先）；“应用默认模板”一键套用站点默认/全局默认；恢复输入控件边框与外观。
 // @author       Sauterne
 // @match        http://chat.openai.com/*
 // @match        https://chat.openai.com/*
@@ -52,6 +52,7 @@
     const UI_STORE_KEY = 'universal_prompt_helper_ui_settings';
     const PROMPTS_STORE_KEY = 'universal_prompt_helper_prompts';
     const LANG_STORE_KEY = 'universal_prompt_helper_lang';
+    const SITE_DEFAULTS_STORE_KEY = 'universal_prompt_helper_site_defaults'; // 新增：站点默认模板配置
     const DEFAULT_UI = { top: 100, toggleWidth: 120, toggleHeight: 40 };
     const DEFAULT_TEMPLATE_ID = 'default_interactive';
     const EXPORT_SCHEMA = 'prompthelper.templates.v1';
@@ -65,6 +66,17 @@
         }catch{ return { ...DEFAULT_UI }; }
     }
     function saveUISettings(s){ GM_setValue(UI_STORE_KEY, JSON.stringify(s)); }
+
+    function loadSiteDefaults(){
+        try{
+            const saved = GM_getValue(SITE_DEFAULTS_STORE_KEY, '[]');
+            const arr = JSON.parse(saved);
+            return Array.isArray(arr) ? arr : [];
+        }catch{ return []; }
+    }
+    function saveSiteDefaults(arr){
+        GM_setValue(SITE_DEFAULTS_STORE_KEY, JSON.stringify(Array.isArray(arr)?arr:[]));
+    }
 
     // 强制 open shadow
     const originalAttachShadow = Element.prototype.attachShadow;
@@ -173,7 +185,7 @@ B) 执行检索：打开并对比权威来源；剔除过时/仅观点/不可核
 C) 来源与证据表：ID | Title | URL | Publisher | Pub/Update Date | Key Evidence Used | Reliability(High/Med)。
 D) 去伪存真记录：列明删除项与理由（过时、观点化、被反证、无法核验、无关）。
 E) 已确认事实：仅留可交叉验证事实；关键结论力求 ≥3 个独立来源；每条附 [S#]。
-F) 逻辑论证链：编号逐步推导，步步有 [S#]。
+F) 逻辑论证链：逐步推导，步步有 [S#]。
 G) 结论：中文作答，给出最优答案与置信度/不确定性范围。
 H) 局限与更新触发条件：说明残余不确定性与可能改变结论的新证据。
 
@@ -225,7 +237,18 @@ USER QUESTION (paste multi-paragraph content between the markers):
                 alertExportDone:"模板已导出为文件：",
                 alertImportInvalid:"导入失败：文件格式无效或为空。",
                 alertImportDone:(added,renamed)=>`成功导入 ${added} 个模板（其中 ${renamed} 个已重命名避免重名）。`,
-                quickApplyBtn:"应用默认模板"
+                quickApplyBtn:"应用默认模板",
+                // 站点默认模板
+                siteDefaultsTitle:"站点默认模板",
+                siteDefaultsList:"已保存规则",
+                sitePattern:"域名/通配符",
+                siteTemplate:"绑定模板",
+                siteNewBtn:"新建规则", siteSaveBtn:"保存规则", siteDeleteBtn:"删除规则",
+                alertSitePatternRequired:"请输入域名或通配符（如 *.example.com、kimi.* 等）。",
+                alertSiteTemplateRequired:"请选择要绑定的模板。",
+                alertSiteSelectFirst:"请先选择一条规则。",
+                alertSiteSaved:"规则已保存！",
+                alertSiteDeleted:"规则已删除！"
             },
             en:{
                 toggleButton:"Helper",panelTitle:"PromptHelper",collapseTitle:"Collapse",
@@ -249,12 +272,24 @@ USER QUESTION (paste multi-paragraph content between the markers):
                 alertExportDone:"Templates exported as file: ",
                 alertImportInvalid:"Import failed: invalid or empty file.",
                 alertImportDone:(added,renamed)=>`Imported ${added} templates (${renamed} renamed to avoid conflicts).`,
-                quickApplyBtn:"Quick Apply"
+                quickApplyBtn:"Quick Apply",
+                // site defaults
+                siteDefaultsTitle:"Site Default Templates",
+                siteDefaultsList:"Saved Rules",
+                sitePattern:"Domain / Wildcard",
+                siteTemplate:"Bound Template",
+                siteNewBtn:"New Rule", siteSaveBtn:"Save Rule", siteDeleteBtn:"Delete Rule",
+                alertSitePatternRequired:"Please enter a domain/wildcard (e.g. *.example.com, kimi.*).",
+                alertSiteTemplateRequired:"Please choose a template to bind.",
+                alertSiteSelectFirst:"Please select a rule first.",
+                alertSiteSaved:"Rule saved!",
+                alertSiteDeleted:"Rule deleted!"
             }
         };
 
         let currentLang=GM_getValue(LANG_STORE_KEY,'zh');
         let uiSettings = loadUISettings();
+        let siteDefaults = loadSiteDefaults(); // [{id, pattern, templateId, createdAt}...]
 
         function injectStyles(){
             GM_addStyle(`
@@ -277,19 +312,19 @@ USER QUESTION (paste multi-paragraph content between the markers):
                 #prompt-helper-toggle {
                     width: var(--ph-toggle-width, 120px) !important;
                     height: var(--ph-toggle-height, 40px) !important;
-                    background-color: #007bff !important; color: white !important;
-                    border-radius: 10px 0 0 10px !important;
-                    cursor: pointer !important;
-                    display: flex !important; align-items: center !important; justify-content: center !important;
-                    font-size: 16px !important; box-shadow: -2px 2px 5px rgba(0,0,0,0.2) !important;
-                    white-space: nowrap !important; padding: 0 12px !important;
+                    background-color: #007bff !重要; color: white !重要;
+                    border-radius: 10px 0 0 10px !重要;
+                    cursor: pointer !重要;
+                    display: flex !重要; align-items: center !重要; justify-content: center !重要;
+                    font-size: 16px !重要; box-shadow: -2px 2px 5px rgba(0,0,0,0.2) !重要;
+                    white-space: nowrap !重要; padding: 0 12px !重要;
                 }
-                /* 新增：快速应用默认模板按钮（置于 Helper 按钮下方） */
+                /* 新增：快速应用默认模板按钮 */
                 #prompt-helper-quickapply {
                     width: var(--ph-toggle-width, 120px) !important;
                     height: 32px !important;
                     margin-top: 6px !important;
-                    background-color: #28a745 !important; color: #fff !important; /* 高亮 */
+                    background-color: #28a745 !important; color: #fff !important;
                     border-radius: 10px 0 0 10px !important;
                     cursor: pointer !important;
                     display: flex !important; align-items: center !important; justify-content: center !important;
@@ -331,13 +366,31 @@ USER QUESTION (paste multi-paragraph content between the markers):
                 #prompt-helper-content .ph-section { display: flex !important; flex-direction: column !important; gap: 6px !important; }
                 #prompt-helper-content .ph-section + .ph-section { margin-top: 8px !important; }
 
-                #prompt-helper-content label { font-weight: bold !important; color: #495057 !important; font-size: 14px !important; }
-                #prompt-helper-content select, #prompt-helper-content input, #prompt-helper-content textarea {
-                    width: 100% !重要; padding: 8px !重要; border: 1px solid #ced4da !重要; border-radius: 4px !重要;
-                    font-size: 14px !重要; color: #333 !重要; background-color: #fff !重要; line-height: 1.5 !重要;
+                /* 表单外观（恢复边框与默认样式） */
+                #prompt-helper-content select,
+                #prompt-helper-content input,
+                #prompt-helper-content textarea {
+                    appearance: auto !important;
+                    -webkit-appearance: auto !important;
+                    -moz-appearance: auto !important;
+                    width: 100% !important;
+                    padding: 8px !important;
+                    border: 1px solid #adb5bd !important;
+                    border-radius: 6px !important;
+                    background-color: #ffffff !important;
+                    color: #333 !important;
+                    line-height: 1.5 !important;
+                    background-clip: padding-box !important;
                 }
                 #prompt-helper-content textarea { resize: vertical !important; min-height: 100px !important; }
                 #prompt-helper-content #ph-template-body { height: 150px !important; }
+                #prompt-helper-content select:focus,
+                #prompt-helper-content input:focus,
+                #prompt-helper-content textarea:focus {
+                    border-color: #80bdff !important;
+                    box-shadow: 0 0 0 3px rgba(0,123,255,.25) !important;
+                    outline: none !important;
+                }
 
                 /* 按钮组 */
                 #prompt-helper-content .ph-button-group { display: flex !important; gap: 8px !important; justify-content: space-between !important; margin-top: 6px !important; }
@@ -366,7 +419,7 @@ USER QUESTION (paste multi-paragraph content between the markers):
                 #prompt-helper-container #ph-settings-view { display: flex !important; flex-direction: column !important; gap: 10px !important; }
                 #prompt-helper-content .ph-grid { display: grid !important; grid-template-columns: 1fr 1fr !important; gap: 8px 10px !important; }
                 @media (max-width: 480px) { #prompt-helper-content .ph-grid { grid-template-columns: 1fr !important; } }
-            `.replace(/！重要/g, '!important')); // 防止全角误写
+            `.replace(/！重要/g, '!important')); // 防全角
         }
 
         function applyUISettings(container){
@@ -376,6 +429,7 @@ USER QUESTION (paste multi-paragraph content between the markers):
             container.style.setProperty('--ph-toggle-height', `${uiSettings.toggleHeight}px`);
         }
 
+        // --- 文本域/富文本处理（保留既有逻辑，略） ---
         function resolveEditableTarget(el){
             if(!el) return null;
             const tag = el.tagName?.toLowerCase?.();
@@ -454,6 +508,7 @@ USER QUESTION (paste multi-paragraph content between the markers):
             }
         }
 
+        // --- UI 构建 ---
         function buildUI(){
             const create=(tag,id,classes=[],attributes={},children=[])=>{
                 const el=document.createElement(tag);
@@ -466,7 +521,6 @@ USER QUESTION (paste multi-paragraph content between the markers):
             const container=create('div','prompt-helper-container');
 
             D.toggleButton=create('button','prompt-helper-toggle');
-            // 新增：快速应用默认模板按钮
             D.quickApplyButton=document.createElement('button');
             D.quickApplyButton.id='prompt-helper-quickapply';
 
@@ -505,7 +559,7 @@ USER QUESTION (paste multi-paragraph content between the markers):
             ]);
             D.mainView = create('div','ph-main-view',[],{},[section1,section2,sectionActions]);
 
-            // 设置视图
+            // 设置视图 —— 基础
             D.importBtn=create('button','ph-import-btn',['ph-btn-secondary']);
             D.exportBtn=create('button','ph-export-btn',['ph-btn-secondary']);
             D.importFileInput=create('input','ph-import-file',[],{type:'file',accept:'.json,application/json',style:'display:none'});
@@ -529,9 +583,37 @@ USER QUESTION (paste multi-paragraph content between the markers):
                 D.settingToggleHeightLabel, D.settingToggleHeightInput
             ]);
             const settingsButtons = create('div',null,['ph-button-group'],{},[D.settingsSaveBtn, D.settingsResetBtn]);
+
+            // 设置视图 —— 站点默认模板（新增）
+            D.siteTitle = document.createElement('h4'); D.siteTitle.id='ph-site-title';
+            D.siteListLabel = document.createElement('label'); D.siteListLabel.htmlFor='ph-site-list';
+            D.siteList = create('select','ph-site-list');
+            D.siteNewBtn = create('button','ph-site-new',['ph-btn-primary']);
+            D.siteSaveBtn = create('button','ph-site-save',['ph-btn-success']);
+            D.siteDeleteBtn = create('button','ph-site-del',['ph-btn-danger']);
+            const siteListRow = create('div',null,['ph-section'],{},[
+                D.siteListLabel, D.siteList,
+                create('div',null,['ph-button-group'],{},[D.siteNewBtn, D.siteSaveBtn, D.siteDeleteBtn])
+            ]);
+            D.sitePatternLabel = document.createElement('label'); D.sitePatternLabel.htmlFor='ph-site-pattern';
+            D.sitePatternInput = create('input','ph-site-pattern',[],{type:'text',placeholder:'e.g. *.example.com'});
+            D.siteTplLabel = document.createElement('label'); D.siteTplLabel.htmlFor='ph-site-tpl';
+            D.siteTplSelect = create('select','ph-site-tpl');
+            const siteEditGrid = create('div','ph-site-grid',['ph-grid'],{},[
+                D.sitePatternLabel, D.sitePatternInput,
+                D.siteTplLabel, D.siteTplSelect
+            ]);
+
             D.backBtn = create('button','ph-back-btn',['ph-btn-secondary'],{},[document.createTextNode('←')]);
+
             D.settingsView = document.createElement('div'); D.settingsView.id='ph-settings-view';
-            D.settingsView.append(D.backBtn, D.settingsTitleEl, settingsGrid, settingsButtons, sectionIO);
+            // 站点默认模板模块放在顶部，然后基础设置，再导入导出
+            D.settingsView.append(
+                D.backBtn,
+                D.siteTitle, siteListRow, siteEditGrid,
+                D.settingsTitleEl, settingsGrid, settingsButtons,
+                sectionIO
+            );
 
             D.contentPanel.append(header, D.mainView, D.settingsView);
             // 按顺序：Helper 按钮 → 快速应用按钮 → 面板
@@ -539,7 +621,7 @@ USER QUESTION (paste multi-paragraph content between the markers):
             return {container,elements:D};
         }
 
-        // 工具：下载/导入归一/站点判断/取输入框/取文本
+        // 工具：下载/导入归一/站点判断/取输入框/取文本/站点规则匹配
         function nowStamp(){
             const d=new Date(); const p=n=>String(n).padStart(2,'0');
             return `${d.getFullYear()}${p(d.getMonth()+1)}${p(d.getDate())}_${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}`;
@@ -559,7 +641,7 @@ USER QUESTION (paste multi-paragraph content between the markers):
             while(existingSet.has(`${baseName}${IMPORT_SUFFIX_BASE} ${i}`)) i++;
             return `${baseName}${IMPORT_SUFFIX_BASE} ${i}`;
         }
-        function genId(){ return `prompt_${Date.now()}_${Math.random().toString(36).slice(2,8)}`; }
+        function genId(prefix='id'){ return `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2,8)}`; }
         function normalizeImportedList(parsed){
             if(!parsed) return [];
             if(Array.isArray(parsed)) return parsed;
@@ -608,7 +690,34 @@ USER QUESTION (paste multi-paragraph content between the markers):
         function isKimiSite(){ const h=location.hostname; return h.includes('kimi.moonshot.cn')||h.includes('kimi.com')||h.includes('www.kimi.com'); }
         function isClaudeSite(){ const h=location.hostname; return h.includes('claude.ai')||h.includes('fuclaude.com'); }
 
-        // 统一的“将 finalPrompt 覆盖填回聊天栏”的函数（主按钮与快速按钮共用）
+        // --- 站点默认模板匹配 ---
+        function patternToRegex(pat){
+            const esc = String(pat||'').toLowerCase().replace(/[.+^${}()|[\]\\]/g,'\\$&').replace(/\*/g,'.*');
+            return new RegExp('^'+esc+'$','i');
+        }
+        function matchHostWithPattern(host, pat){
+            if(!host || !pat) return false;
+            const re = patternToRegex(pat);
+            return re.test(String(host).toLowerCase());
+        }
+        function getActiveDefaultTemplateId(prompts){
+            const host = location.hostname.toLowerCase();
+            // 按保存顺序从前到后匹配，首个命中即用
+            for(const rule of siteDefaults){
+                if(rule && matchHostWithPattern(host, rule.pattern)){
+                    if(rule.templateId && prompts[rule.templateId]){
+                        return rule.templateId;
+                    }
+                }
+            }
+            return DEFAULT_TEMPLATE_ID;
+        }
+        function getActiveDefaultTemplateString(prompts){
+            const id = getActiveDefaultTemplateId(prompts);
+            return (prompts[id]?.template) || (defaultPrompts[DEFAULT_TEMPLATE_ID]?.template)||'';
+        }
+
+        // 统一的“将 finalPrompt 覆盖填回聊天栏”
         function applyPromptToChat(inputElement, finalPrompt){
             inputElement = resolveEditableTarget(inputElement);
 
@@ -783,6 +892,40 @@ USER QUESTION (paste multi-paragraph content between the markers):
 
             let prompts={};
 
+            // --- 填充站点默认模板 UI ---
+            function populateSiteTplSelect(){
+                D.siteTplSelect.textContent='';
+                for(const id in prompts){
+                    const opt=document.createElement('option');
+                    opt.value=id; opt.textContent=prompts[id].name || id;
+                    D.siteTplSelect.appendChild(opt);
+                }
+            }
+            function populateSiteList(){
+                const t = translations[currentLang];
+                D.siteList.textContent='';
+                const noneOpt=document.createElement('option');
+                noneOpt.value=''; noneOpt.textContent='-- ' + t.siteDefaultsList + ' --';
+                D.siteList.appendChild(noneOpt);
+                siteDefaults.forEach(rule=>{
+                    const name = prompts[rule.templateId]?.name || `[${rule.templateId}]`;
+                    const opt=document.createElement('option');
+                    opt.value=rule.id; opt.textContent=`${rule.pattern}  →  ${name}`;
+                    D.siteList.appendChild(opt);
+                });
+            }
+            function clearSiteEditFields(){
+                D.siteList.value='';
+                D.sitePatternInput.value='';
+                if(D.siteTplSelect.options.length>0) D.siteTplSelect.selectedIndex=0;
+            }
+            function loadSiteRuleToFields(rule){
+                if(!rule) return clearSiteEditFields();
+                D.sitePatternInput.value = rule.pattern || '';
+                if(rule.templateId && prompts[rule.templateId]) D.siteTplSelect.value = rule.templateId;
+            }
+
+            // --- 模板下拉 ---
             const populateDropdown=()=>{
                 const currentSelection=D.templateSelect.value;
                 D.templateSelect.textContent='';
@@ -824,6 +967,13 @@ USER QUESTION (paste multi-paragraph content between the markers):
                 for(const k of Object.keys(obj)){ if(legacyNames.has(obj[k]?.name)) delete obj[k]; }
             }
 
+            // 设置主界面默认选中的模板为“站点默认模板”
+            function applyActiveDefaultToMainSelect(){
+                const activeId = getActiveDefaultTemplateId(prompts);
+                if(prompts[activeId]) D.templateSelect.value = activeId;
+                displaySelectedPrompt();
+            }
+
             const updateUI=()=>{
                 const t=translations[currentLang];
                 D.toggleButton.textContent=t.toggleButton; D.title.textContent=t.panelTitle;
@@ -845,13 +995,24 @@ USER QUESTION (paste multi-paragraph content between the markers):
                 D.settingsResetBtn.textContent = t.settingsReset;
                 D.importBtn.textContent=t.importBtn; D.exportBtn.textContent=t.exportBtn;
 
+                D.siteTitle.textContent = t.siteDefaultsTitle;
+                D.siteListLabel.textContent = t.siteDefaultsList;
+                D.sitePatternLabel.textContent = t.sitePattern;
+                D.siteTplLabel.textContent = t.siteTemplate;
+                D.siteNewBtn.textContent = t.siteNewBtn;
+                D.siteSaveBtn.textContent = t.siteSaveBtn;
+                D.siteDeleteBtn.textContent = t.siteDeleteBtn;
+
                 D.settingTopInput.value = uiSettings.top;
                 D.settingToggleWidthInput.value = uiSettings.toggleWidth;
                 D.settingToggleHeightInput.value = uiSettings.toggleHeight;
 
                 populateDropdown();
-                if(prompts[DEFAULT_TEMPLATE_ID]) D.templateSelect.value=DEFAULT_TEMPLATE_ID;
-                displaySelectedPrompt();
+                populateSiteTplSelect();
+                populateSiteList();
+
+                // 主界面默认选中：站点默认模板（否则全局默认）
+                applyActiveDefaultToMainSelect();
             };
 
             const loadPrompts=()=>{
@@ -865,7 +1026,6 @@ USER QUESTION (paste multi-paragraph content between the markers):
                     prompts={...defaultPrompts}; savePrompts();
                 }
                 updateUI();
-                if(prompts[DEFAULT_TEMPLATE_ID]){ D.templateSelect.value=DEFAULT_TEMPLATE_ID; displaySelectedPrompt(); }
             };
 
             // 主界面控制
@@ -884,7 +1044,9 @@ USER QUESTION (paste multi-paragraph content between the markers):
                 if(!name||!template){ alert(translations[currentLang].alertSaveError); return; }
                 let selectedId=D.templateSelect.value||`prompt_${Date.now()}`;
                 prompts[selectedId]={name,template};
-                savePrompts(); populateDropdown();
+                savePrompts();
+                // 模板变化后，站点模板下拉也要刷新
+                updateUI();
                 D.templateSelect.value=selectedId; displaySelectedPrompt();
                 alert(`${translations[currentLang].alertSaveSuccess} "${name}"`);
             });
@@ -893,9 +1055,8 @@ USER QUESTION (paste multi-paragraph content between the markers):
                 if(!selectedId){ alert(translations[currentLang].alertDeleteError); return; }
                 if(selectedId===DEFAULT_TEMPLATE_ID){ alert(translations[currentLang].alertCannotDeleteDefault); return; }
                 if(confirm(`${translations[currentLang].alertDeleteConfirm} "${prompts[selectedId].name}"?`)){
-                    delete prompts[selectedId]; savePrompts(); populateDropdown();
-                    if(prompts[DEFAULT_TEMPLATE_ID]) D.templateSelect.value=DEFAULT_TEMPLATE_ID;
-                    displaySelectedPrompt();
+                    delete prompts[selectedId]; savePrompts();
+                    updateUI();
                 }
             });
 
@@ -966,12 +1127,13 @@ USER QUESTION (paste multi-paragraph content between the markers):
                             if(!name || !body) continue;
                             let finalName=name;
                             if(existingNames.has(finalName)){ finalName=ensureUniqueName(name, existingNames); if(finalName!==name) renamed++; }
-                            const id=genId();
+                            const id=genId('prompt');
                             prompts[id]={name:finalName, template:body};
                             existingNames.add(finalName);
                             added++;
                         }
-                        savePrompts(); populateDropdown(); displaySelectedPrompt();
+                        savePrompts();
+                        updateUI();
                         alert(translations[currentLang].alertImportDone(added,renamed));
                         D.importFileInput.value='';
                     }catch(e){
@@ -982,7 +1144,54 @@ USER QUESTION (paste multi-paragraph content between the markers):
                 reader.readAsText(file,'utf-8');
             });
 
-            // 应用（主界面按钮）
+            // 站点默认模板：事件
+            D.siteNewBtn.addEventListener('click', ()=> { clearSiteEditFields(); D.sitePatternInput.focus(); });
+            D.siteSaveBtn.addEventListener('click', ()=>{
+                const t = translations[currentLang];
+                const pattern = (D.sitePatternInput.value||'').trim();
+                const tplId = D.siteTplSelect.value;
+                if(!pattern){ alert(t.alertSitePatternRequired); return; }
+                if(!tplId){ alert(t.alertSiteTemplateRequired); return; }
+
+                const selectedId = D.siteList.value;
+                if(selectedId){
+                    // 更新现有规则（不改变原顺序）
+                    const idx = siteDefaults.findIndex(r=>r.id===selectedId);
+                    if(idx>=0){
+                        siteDefaults[idx].pattern = pattern;
+                        siteDefaults[idx].templateId = tplId;
+                    }
+                }else{
+                    // 新建：追加到末尾（早保存优先：靠前的优先）
+                    siteDefaults.push({ id: genId('map'), pattern, templateId: tplId, createdAt: Date.now() });
+                }
+                saveSiteDefaults(siteDefaults);
+                populateSiteList();
+                alert(t.alertSiteSaved);
+
+                // 保存后，主界面默认选中可能变化
+                applyActiveDefaultToMainSelect();
+            });
+            D.siteDeleteBtn.addEventListener('click', ()=>{
+                const t = translations[currentLang];
+                const selectedId = D.siteList.value;
+                if(!selectedId){ alert(t.alertSiteSelectFirst); return; }
+                const idx = siteDefaults.findIndex(r=>r.id===selectedId);
+                if(idx>=0){ siteDefaults.splice(idx,1); saveSiteDefaults(siteDefaults); }
+                populateSiteList();
+                clearSiteEditFields();
+                alert(t.alertSiteDeleted);
+
+                // 删除后，主界面默认选中可能变化
+                applyActiveDefaultToMainSelect();
+            });
+            D.siteList.addEventListener('change', ()=>{
+                const id = D.siteList.value;
+                const rule = siteDefaults.find(r=>r.id===id);
+                loadSiteRuleToFields(rule);
+            });
+
+            // 应用（主界面按钮）：使用当前编辑模板 + 聊天栏内容
             D.submitBtn.addEventListener('click',()=>{
                 const template=D.templateBodyTextarea.value;
                 const res = getFinalFromChatByTemplateStr(template);
@@ -993,15 +1202,14 @@ USER QUESTION (paste multi-paragraph content between the markers):
                 D.contentPanel.classList.add('hidden');
             });
 
-            // 新增：快速应用默认模板（不打开主界面）
+            // 快速应用默认模板：使用站点默认模板（若无命中，使用全局默认）
             D.quickApplyButton.addEventListener('click', ()=>{
-                const tpl = (prompts[DEFAULT_TEMPLATE_ID] || defaultPrompts[DEFAULT_TEMPLATE_ID])?.template || '';
+                const tpl = getActiveDefaultTemplateString(prompts);
                 const res = getFinalFromChatByTemplateStr(tpl);
                 if(res.error==='no_template'){ alert(translations[currentLang].alertTemplateError); return; }
                 if(res.error==='no_input'){ alert(translations[currentLang].alertSubmitError); return; }
                 if(res.error==='no_user_input'){ alert(translations[currentLang].alertNoUserInput); return; }
                 applyPromptToChat(res.inputEl, res.final);
-                // 不展示主界面；若已展开则收起
                 document.querySelector('#prompt-helper-content')?.classList.add('hidden');
             });
 
