@@ -2,7 +2,7 @@
 // @name         PromptHelper
 // @namespace    http://tampermonkey.net/
 // @version      1.7.0
-// @description  PromptHelper：通用于 ChatGPT, Gemini, Claude, Kimi, DeepSeek, 通义、元宝、Google AI Studio、Grok、豆包 的侧边模板助手；主/设分离；导入/导出；从聊天栏读取并回填；Kimi/Claude 专项处理（覆盖、不重复、换行保真）。新增：站点默认模板（通配符、早保存优先）；“应用默认模板”一键套用站点默认/全局默认；恢复输入控件边框与外观。
+// @description  PromptHelper：通用于 ChatGPT, Gemini, Claude, Kimi, DeepSeek, 通义、元宝、Google AI Studio、Grok、豆包 的侧边模板助手；主/设分离；导入/导出；从聊天栏读取并回填；Kimi/Claude 专项处理（覆盖、不重复、换行保真）。新增：站点默认模板（通配符、早保存优先）；“应用默认模板”一键套用站点默认/全局默认；修复并发覆盖（读-改-写）；Helper 按钮改蓝色以适配黑底站点可见性提升。
 // @author       Sauterne
 // @match        http://chat.openai.com/*
 // @match        https://chat.openai.com/*
@@ -52,7 +52,7 @@
     const UI_STORE_KEY = 'universal_prompt_helper_ui_settings';
     const PROMPTS_STORE_KEY = 'universal_prompt_helper_prompts';
     const LANG_STORE_KEY = 'universal_prompt_helper_lang';
-    const SITE_DEFAULTS_STORE_KEY = 'universal_prompt_helper_site_defaults'; // 新增：站点默认模板配置
+    const SITE_DEFAULTS_STORE_KEY = 'universal_prompt_helper_site_defaults';
     const DEFAULT_UI = { top: 100, toggleWidth: 120, toggleHeight: 40 };
     const DEFAULT_TEMPLATE_ID = 'default_interactive';
     const EXPORT_SCHEMA = 'prompthelper.templates.v1';
@@ -96,7 +96,6 @@
         if(paras.length===0)paras.push('<p><br></p>');
         return paras.join('');
     }
-    // Claude：每行一个段落，确保单个换行不丢
     function textToProseMirrorParagraphHTML(text){
         const lines = text.split('\n');
         if(lines.length===0) return '<p><br></p>';
@@ -238,7 +237,6 @@ USER QUESTION (paste multi-paragraph content between the markers):
                 alertImportInvalid:"导入失败：文件格式无效或为空。",
                 alertImportDone:(added,renamed)=>`成功导入 ${added} 个模板（其中 ${renamed} 个已重命名避免重名）。`,
                 quickApplyBtn:"应用默认模板",
-                // 站点默认模板
                 siteDefaultsTitle:"站点默认模板",
                 siteDefaultsList:"已保存规则",
                 sitePattern:"域名/通配符",
@@ -273,7 +271,6 @@ USER QUESTION (paste multi-paragraph content between the markers):
                 alertImportInvalid:"Import failed: invalid or empty file.",
                 alertImportDone:(added,renamed)=>`Imported ${added} templates (${renamed} renamed to avoid conflicts).`,
                 quickApplyBtn:"Quick Apply",
-                // site defaults
                 siteDefaultsTitle:"Site Default Templates",
                 siteDefaultsList:"Saved Rules",
                 sitePattern:"Domain / Wildcard",
@@ -289,7 +286,7 @@ USER QUESTION (paste multi-paragraph content between the markers):
 
         let currentLang=GM_getValue(LANG_STORE_KEY,'zh');
         let uiSettings = loadUISettings();
-        let siteDefaults = loadSiteDefaults(); // [{id, pattern, templateId, createdAt}...]
+        let siteDefaults = loadSiteDefaults();
 
         function injectStyles(){
             GM_addStyle(`
@@ -308,18 +305,18 @@ USER QUESTION (paste multi-paragraph content between the markers):
                     color: #333 !important;
                     line-height: 1.5 !important;
                 }
-                /* 主侧按钮 */
+                /* Helper 主按钮：改回蓝色，增强对比 */
                 #prompt-helper-toggle {
                     width: var(--ph-toggle-width, 120px) !important;
                     height: var(--ph-toggle-height, 40px) !important;
-                    background-color: #007bff !重要; color: white !重要;
-                    border-radius: 10px 0 0 10px !重要;
-                    cursor: pointer !重要;
-                    display: flex !重要; align-items: center !重要; justify-content: center !重要;
-                    font-size: 16px !重要; box-shadow: -2px 2px 5px rgba(0,0,0,0.2) !重要;
-                    white-space: nowrap !重要; padding: 0 12px !重要;
+                    background-color: #007bff !important; color: white !important;
+                    border-radius: 10px 0 0 10px !important;
+                    cursor: pointer !important;
+                    display: flex !important; align-items: center !important; justify-content: center !important;
+                    font-size: 16px !important; box-shadow: -2px 2px 5px rgba(0,0,0,0.2) !important;
+                    white-space: nowrap !important; padding: 0 12px !important;
                 }
-                /* 新增：快速应用默认模板按钮 */
+                /* 快速应用按钮：保持绿色 */
                 #prompt-helper-quickapply {
                     width: var(--ph-toggle-width, 120px) !important;
                     height: 32px !important;
@@ -356,17 +353,17 @@ USER QUESTION (paste multi-paragraph content between the markers):
                     padding-bottom: 14px !important;
                 }
                 #prompt-helper-content.hidden { transform: translateX(100%) !important; opacity: 0 !important; pointer-events: none !important; }
-                #prompt-helper-content h3 { padding: 0 !important; font-size: 18px !important; color: #343a40 !important; text-align: center !important; font-weight: bold !重要; }
+                #prompt-helper-content h3 { padding: 0 !important; font-size: 18px !important; color: #343a40 !important; text-align: center !important; font-weight: bold !important; }
 
-                /* 主/设双页：互斥显示 */
+                /* 主/设双页互斥 */
                 #prompt-helper-content[data-view="main"]    #ph-settings-view { display: none !important; }
                 #prompt-helper-content[data-view="settings"] #ph-main-view     { display: none !important; }
 
-                /* 间距 */
+                /* 区块与间距（适度紧凑但不重叠） */
                 #prompt-helper-content .ph-section { display: flex !important; flex-direction: column !important; gap: 6px !important; }
                 #prompt-helper-content .ph-section + .ph-section { margin-top: 8px !important; }
 
-                /* 表单外观（恢复边框与默认样式） */
+                /* 表单外观（可见边框 + 聚焦高亮） */
                 #prompt-helper-content select,
                 #prompt-helper-content input,
                 #prompt-helper-content textarea {
@@ -395,7 +392,6 @@ USER QUESTION (paste multi-paragraph content between the markers):
                 /* 按钮组 */
                 #prompt-helper-content .ph-button-group { display: flex !important; gap: 8px !important; justify-content: space-between !important; margin-top: 6px !important; }
                 #prompt-helper-content .ph-button-group button { flex-grow: 1 !important; }
-
                 #prompt-helper-content button { padding: 10px !important; border-radius: 5px !important; border: none !important; cursor: pointer !important; font-size: 14px !important; font-weight: bold !important; transition: background-color 0.2s, color 0.2s !important; color: white !important; }
                 #prompt-helper-content button:disabled { cursor: not-allowed !important; opacity: 0.7 !important; }
 
@@ -411,7 +407,7 @@ USER QUESTION (paste multi-paragraph content between the markers):
                 #prompt-helper-container #ph-collapse-btn { font-size: 24px !important; cursor: pointer !important; color: #6c757d !important; background: none !important; padding: 0 5px !important; line-height: 1 !important; }
                 #prompt-helper-container #ph-lang-toggle { font-size: 12px !important; color: #007bff !important; background: none !important; border: 1px solid #007bff !important; padding: 2px 6px !important; border-radius: 4px !important; cursor: pointer !important; }
 
-                /* 设置按钮（右上角） */
+                /* 设置按钮 */
                 #prompt-helper-container #ph-settings-btn { font-size: 12px !important; color: #6c757d !important; background: #fff !important; border: 1px solid #ced4da !important; padding: 2px 8px !important; border-radius: 4px !important; cursor: pointer !important; }
                 #prompt-helper-container #ph-settings-btn:hover { background: #f1f3f5 !important; }
 
@@ -419,7 +415,7 @@ USER QUESTION (paste multi-paragraph content between the markers):
                 #prompt-helper-container #ph-settings-view { display: flex !important; flex-direction: column !important; gap: 10px !important; }
                 #prompt-helper-content .ph-grid { display: grid !important; grid-template-columns: 1fr 1fr !important; gap: 8px 10px !important; }
                 @media (max-width: 480px) { #prompt-helper-content .ph-grid { grid-template-columns: 1fr !important; } }
-            `.replace(/！重要/g, '!important')); // 防全角
+            `);
         }
 
         function applyUISettings(container){
@@ -429,7 +425,7 @@ USER QUESTION (paste multi-paragraph content between the markers):
             container.style.setProperty('--ph-toggle-height', `${uiSettings.toggleHeight}px`);
         }
 
-        // --- 文本域/富文本处理（保留既有逻辑，略） ---
+        // —— 文本域/富文本工具 ——（保持原逻辑）
         function resolveEditableTarget(el){
             if(!el) return null;
             const tag = el.tagName?.toLowerCase?.();
@@ -508,7 +504,7 @@ USER QUESTION (paste multi-paragraph content between the markers):
             }
         }
 
-        // --- UI 构建 ---
+        // —— UI 构建 ——
         function buildUI(){
             const create=(tag,id,classes=[],attributes={},children=[])=>{
                 const el=document.createElement(tag);
@@ -584,7 +580,7 @@ USER QUESTION (paste multi-paragraph content between the markers):
             ]);
             const settingsButtons = create('div',null,['ph-button-group'],{},[D.settingsSaveBtn, D.settingsResetBtn]);
 
-            // 设置视图 —— 站点默认模板（新增）
+            // 设置视图 —— 站点默认模板
             D.siteTitle = document.createElement('h4'); D.siteTitle.id='ph-site-title';
             D.siteListLabel = document.createElement('label'); D.siteListLabel.htmlFor='ph-site-list';
             D.siteList = create('select','ph-site-list');
@@ -607,7 +603,6 @@ USER QUESTION (paste multi-paragraph content between the markers):
             D.backBtn = create('button','ph-back-btn',['ph-btn-secondary'],{},[document.createTextNode('←')]);
 
             D.settingsView = document.createElement('div'); D.settingsView.id='ph-settings-view';
-            // 站点默认模板模块放在顶部，然后基础设置，再导入导出
             D.settingsView.append(
                 D.backBtn,
                 D.siteTitle, siteListRow, siteEditGrid,
@@ -616,12 +611,12 @@ USER QUESTION (paste multi-paragraph content between the markers):
             );
 
             D.contentPanel.append(header, D.mainView, D.settingsView);
-            // 按顺序：Helper 按钮 → 快速应用按钮 → 面板
-            container.append(D.toggleButton, D.quickApplyButton, D.contentPanel);
+            const containerNodes = [D.toggleButton, D.quickApplyButton, D.contentPanel];
+            container.append(...containerNodes);
             return {container,elements:D};
         }
 
-        // 工具：下载/导入归一/站点判断/取输入框/取文本/站点规则匹配
+        // 工具：下载/导入归一/站点判断/输入框查找/文本获取/站点规则匹配
         function nowStamp(){
             const d=new Date(); const p=n=>String(n).padStart(2,'0');
             return `${d.getFullYear()}${p(d.getMonth()+1)}${p(d.getDate())}_${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}`;
@@ -690,7 +685,7 @@ USER QUESTION (paste multi-paragraph content between the markers):
         function isKimiSite(){ const h=location.hostname; return h.includes('kimi.moonshot.cn')||h.includes('kimi.com')||h.includes('www.kimi.com'); }
         function isClaudeSite(){ const h=location.hostname; return h.includes('claude.ai')||h.includes('fuclaude.com'); }
 
-        // --- 站点默认模板匹配 ---
+        // —— 站点默认模板匹配 ——
         function patternToRegex(pat){
             const esc = String(pat||'').toLowerCase().replace(/[.+^${}()|[\]\\]/g,'\\$&').replace(/\*/g,'.*');
             return new RegExp('^'+esc+'$','i');
@@ -702,7 +697,6 @@ USER QUESTION (paste multi-paragraph content between the markers):
         }
         function getActiveDefaultTemplateId(prompts){
             const host = location.hostname.toLowerCase();
-            // 按保存顺序从前到后匹配，首个命中即用
             for(const rule of siteDefaults){
                 if(rule && matchHostWithPattern(host, rule.pattern)){
                     if(rule.templateId && prompts[rule.templateId]){
@@ -717,7 +711,7 @@ USER QUESTION (paste multi-paragraph content between the markers):
             return (prompts[id]?.template) || (defaultPrompts[DEFAULT_TEMPLATE_ID]?.template)||'';
         }
 
-        // 统一的“将 finalPrompt 覆盖填回聊天栏”
+        // —— 统一应用到聊天栏（保持原逻辑） ——
         function applyPromptToChat(inputElement, finalPrompt){
             inputElement = resolveEditableTarget(inputElement);
 
@@ -820,7 +814,6 @@ USER QUESTION (paste multi-paragraph content between the markers):
                 if(inputElement.innerText!==undefined) inputElement.innerText=finalPrompt;
             }
 
-            // 事件派发（Kimi/Claude 不再派 paste 避免重复）
             const commonEvents = (isKimiSite() || isClaudeSite())
                 ? ['input','change','keydown','keyup']
                 : ['input','change','keydown','keyup','paste'];
@@ -851,7 +844,6 @@ USER QUESTION (paste multi-paragraph content between the markers):
                 try{ inputElement.dispatchEvent(new Event('change',{bubbles:true})); }catch(_){}
             },100);
 
-            // React/Angular 等兜底（排除 Kimi/Claude，避免二次注入）
             const specialSites=['deepseek.com','tongyi.com','yuanbao.tencent.com','aistudio.google.com','doubao.com'];
             const currentSite=specialSites.find(site=>location.hostname.includes(site));
             if(currentSite){
@@ -890,9 +882,29 @@ USER QUESTION (paste multi-paragraph content between the markers):
             const addToDOM=()=>{ if(document.body){ document.body.appendChild(container); applyUISettings(container);} else { setTimeout(addToDOM,100);} };
             addToDOM();
 
-            let prompts={};
+            // —— 并发安全辅助：每次写前都重新读取并合并 —— //
+            function loadPromptsLatest(){
+                let latest = {};
+                const saved=GM_getValue(PROMPTS_STORE_KEY,null);
+                if(saved){
+                    try{ latest=JSON.parse(saved)||{}; }catch{ latest={}; }
+                }
+                // 清掉历史默认
+                const legacyIds=['prompt_1','prompt_2','prompt_3'];
+                const legacyNames=new Set(['通用回答模板','代码评审模板','英文润色模板']);
+                legacyIds.forEach(id=>{ if(id in latest) delete latest[id]; });
+                for(const k of Object.keys(latest)){ if(legacyNames.has(latest[k]?.name)) delete latest[k]; }
+                // 确保全局默认在
+                if(!latest[DEFAULT_TEMPLATE_ID]) latest[DEFAULT_TEMPLATE_ID]=defaultPrompts[DEFAULT_TEMPLATE_ID];
+                return latest;
+            }
+            function savePromptsLatest(obj){
+                GM_setValue(PROMPTS_STORE_KEY, JSON.stringify(obj||{}));
+            }
 
-            // --- 填充站点默认模板 UI ---
+            let prompts = loadPromptsLatest();
+
+            // —— 站点默认模板 UI 填充 —— //
             function populateSiteTplSelect(){
                 D.siteTplSelect.textContent='';
                 for(const id in prompts){
@@ -925,7 +937,7 @@ USER QUESTION (paste multi-paragraph content between the markers):
                 if(rule.templateId && prompts[rule.templateId]) D.siteTplSelect.value = rule.templateId;
             }
 
-            // --- 模板下拉 ---
+            // —— 模板下拉 —— //
             const populateDropdown=()=>{
                 const currentSelection=D.templateSelect.value;
                 D.templateSelect.textContent='';
@@ -959,15 +971,6 @@ USER QUESTION (paste multi-paragraph content between the markers):
                 D.deleteBtn.disabled=(selectedId===DEFAULT_TEMPLATE_ID);
             };
 
-            const savePrompts=()=>GM_setValue(PROMPTS_STORE_KEY,JSON.stringify(prompts));
-            function removeLegacyDefaults(obj){
-                const legacyIds=['prompt_1','prompt_2','prompt_3'];
-                const legacyNames=new Set(['通用回答模板','代码评审模板','英文润色模板']);
-                legacyIds.forEach(id=>{ if(id in obj) delete obj[id]; });
-                for(const k of Object.keys(obj)){ if(legacyNames.has(obj[k]?.name)) delete obj[k]; }
-            }
-
-            // 设置主界面默认选中的模板为“站点默认模板”
             function applyActiveDefaultToMainSelect(){
                 const activeId = getActiveDefaultTemplateId(prompts);
                 if(prompts[activeId]) D.templateSelect.value = activeId;
@@ -1003,64 +1006,77 @@ USER QUESTION (paste multi-paragraph content between the markers):
                 D.siteSaveBtn.textContent = t.siteSaveBtn;
                 D.siteDeleteBtn.textContent = t.siteDeleteBtn;
 
-                D.settingTopInput.value = uiSettings.top;
-                D.settingToggleWidthInput.value = uiSettings.toggleWidth;
-                D.settingToggleHeightInput.value = uiSettings.toggleHeight;
-
                 populateDropdown();
                 populateSiteTplSelect();
                 populateSiteList();
 
                 // 主界面默认选中：站点默认模板（否则全局默认）
                 applyActiveDefaultToMainSelect();
+
+                D.settingTopInput.value = uiSettings.top;
+                D.settingToggleWidthInput.value = uiSettings.toggleWidth;
+                D.settingToggleHeightInput.value = uiSettings.toggleHeight;
             };
 
-            const loadPrompts=()=>{
-                const saved=GM_getValue(PROMPTS_STORE_KEY,null);
-                if(saved){
-                    try{ prompts=JSON.parse(saved)||{}; }catch{ prompts={}; }
-                    removeLegacyDefaults(prompts);
-                    if(!prompts[DEFAULT_TEMPLATE_ID]){ prompts[DEFAULT_TEMPLATE_ID]=defaultPrompts[DEFAULT_TEMPLATE_ID]; }
-                    savePrompts();
-                } else {
-                    prompts={...defaultPrompts}; savePrompts();
-                }
-                updateUI();
-            };
+            // 初次 UI
+            updateUI();
 
-            // 主界面控制
+            // —— 主界面控制 —— //
             D.toggleButton.addEventListener('click',()=>D.contentPanel.classList.remove('hidden'));
             D.collapseButton.addEventListener('click',()=>D.contentPanel.classList.add('hidden'));
             D.langToggleButton.addEventListener('click',()=>{ currentLang=currentLang==='zh'?'en':'zh'; GM_setValue(LANG_STORE_KEY,currentLang); updateUI(); });
             D.settingsButton.addEventListener('click', ()=> D.contentPanel.setAttribute('data-view','settings'));
             D.backBtn.addEventListener('click', ()=> D.contentPanel.setAttribute('data-view','main'));
 
-            // 模板 CRUD
+            // —— 模板 CRUD（读-改-写，仅改动目标条目） —— //
             D.templateSelect.addEventListener('change',displaySelectedPrompt);
-            D.newBtn.addEventListener('click',()=>{ D.templateSelect.value=''; D.templateNameInput.value=''; D.templateBodyTextarea.value=''; D.templateNameInput.focus(); D.deleteBtn.disabled=true; });
+
+            D.newBtn.addEventListener('click',()=>{
+                D.templateSelect.value='';
+                D.templateNameInput.value='';
+                D.templateBodyTextarea.value='';
+                D.templateNameInput.focus();
+                D.deleteBtn.disabled=true;
+            });
+
             D.saveBtn.addEventListener('click',()=>{
                 const name=D.templateNameInput.value.trim();
-                const template=D.templateBodyTextarea.value.trim();
-                if(!name||!template){ alert(translations[currentLang].alertSaveError); return; }
-                let selectedId=D.templateSelect.value||`prompt_${Date.now()}`;
-                prompts[selectedId]={name,template};
-                savePrompts();
-                // 模板变化后，站点模板下拉也要刷新
+                const templateText=D.templateBodyTextarea.value.trim();
+                if(!name||!templateText){ alert(translations[currentLang].alertSaveError); return; }
+
+                // 读最新 → 只改当前 id → 写回
+                let latest = loadPromptsLatest();
+                let id = D.templateSelect.value || `prompt_${Date.now()}`;
+                latest[id] = { name, template: templateText };
+                savePromptsLatest(latest);
+
+                // 刷新内存 + UI
+                prompts = latest;
                 updateUI();
-                D.templateSelect.value=selectedId; displaySelectedPrompt();
+                D.templateSelect.value=id; displaySelectedPrompt();
                 alert(`${translations[currentLang].alertSaveSuccess} "${name}"`);
             });
+
             D.deleteBtn.addEventListener('click',()=>{
-                const selectedId=D.templateSelect.value;
-                if(!selectedId){ alert(translations[currentLang].alertDeleteError); return; }
-                if(selectedId===DEFAULT_TEMPLATE_ID){ alert(translations[currentLang].alertCannotDeleteDefault); return; }
-                if(confirm(`${translations[currentLang].alertDeleteConfirm} "${prompts[selectedId].name}"?`)){
-                    delete prompts[selectedId]; savePrompts();
+                const id=D.templateSelect.value;
+                if(!id){ alert(translations[currentLang].alertDeleteError); return; }
+                if(id===DEFAULT_TEMPLATE_ID){ alert(translations[currentLang].alertCannotDeleteDefault); return; }
+                if(confirm(`${translations[currentLang].alertDeleteConfirm} "${prompts[id].name}"?`)){
+                    // 读最新 → 删 id → 写回
+                    let latest = loadPromptsLatest();
+                    delete latest[id];
+                    // 防守：若删空了也保证默认在
+                    if(!latest[DEFAULT_TEMPLATE_ID]) latest[DEFAULT_TEMPLATE_ID]=defaultPrompts[DEFAULT_TEMPLATE_ID];
+                    savePromptsLatest(latest);
+
+                    prompts = latest;
                     updateUI();
+                    D.templateSelect.value=DEFAULT_TEMPLATE_ID;
+                    displaySelectedPrompt();
                 }
             });
 
-            // 复制（从聊天栏读取）
+            // —— 复制（从聊天栏读取） —— //
             D.copyBtn.addEventListener('click',()=>{
                 const template=D.templateBodyTextarea.value;
                 const res = getFinalFromChatByTemplateStr(template);
@@ -1073,7 +1089,7 @@ USER QUESTION (paste multi-paragraph content between the markers):
                 }).catch(err=>{ console.error('Copy failed:',err); alert(translations[currentLang].alertCopyError); });
             });
 
-            // 设置保存/重置
+            // —— 设置保存/重置 —— //
             D.settingsSaveBtn.addEventListener('click', ()=>{
                 const top = Math.max(0, parseInt(D.settingTopInput.value||DEFAULT_UI.top,10));
                 const tw = Math.max(40, parseInt(D.settingToggleWidthInput.value||DEFAULT_UI.toggleWidth,10));
@@ -1091,13 +1107,15 @@ USER QUESTION (paste multi-paragraph content between the markers):
                 applyUISettings(document.getElementById('prompt-helper-container'));
             });
 
-            // 导出/导入
+            // —— 导出 —— //
             D.exportBtn.addEventListener('click',()=>{
+                // 以最新为准
+                const latest = loadPromptsLatest();
                 const list=[];
-                for(const id in prompts){
+                for(const id in latest){
                     if(id===DEFAULT_TEMPLATE_ID) continue;
-                    const name=(prompts[id]?.name||'').trim();
-                    const template=(prompts[id]?.template||'').trim();
+                    const name=(latest[id]?.name||'').trim();
+                    const template=(latest[id]?.template||'').trim();
                     if(name && template) list.push({name,template});
                 }
                 if(!list.length){ alert(translations[currentLang].alertExportEmpty); return; }
@@ -1106,6 +1124,8 @@ USER QUESTION (paste multi-paragraph content between the markers):
                 downloadJSON(filename, payload);
                 alert(translations[currentLang].alertExportDone + filename);
             });
+
+            // —— 导入（读-改-写合并） —— //
             D.importBtn.addEventListener('click',()=> D.importFileInput.click());
             D.importFileInput.addEventListener('change',(evt)=>{
                 const file=evt.target.files && evt.target.files[0];
@@ -1118,7 +1138,10 @@ USER QUESTION (paste multi-paragraph content between the markers):
                         const parsed=text?JSON.parse(text):null;
                         const arr=normalizeImportedList(parsed);
                         if(!arr.length){ alert(translations[currentLang].alertImportInvalid); return; }
-                        const existingNames=new Set(Object.values(prompts).map(p=>p.name));
+
+                        // 读最新 → 合并导入 → 写回
+                        let latest = loadPromptsLatest();
+                        const existingNames=new Set(Object.values(latest).map(p=>p.name));
                         let added=0, renamed=0;
                         for(const item of arr){
                             if(!item) continue;
@@ -1128,11 +1151,13 @@ USER QUESTION (paste multi-paragraph content between the markers):
                             let finalName=name;
                             if(existingNames.has(finalName)){ finalName=ensureUniqueName(name, existingNames); if(finalName!==name) renamed++; }
                             const id=genId('prompt');
-                            prompts[id]={name:finalName, template:body};
+                            latest[id]={name:finalName, template:body};
                             existingNames.add(finalName);
                             added++;
                         }
-                        savePrompts();
+                        savePromptsLatest(latest);
+
+                        prompts = latest;
                         updateUI();
                         alert(translations[currentLang].alertImportDone(added,renamed));
                         D.importFileInput.value='';
@@ -1144,8 +1169,16 @@ USER QUESTION (paste multi-paragraph content between the markers):
                 reader.readAsText(file,'utf-8');
             });
 
-            // 站点默认模板：事件
-            D.siteNewBtn.addEventListener('click', ()=> { clearSiteEditFields(); D.sitePatternInput.focus(); });
+            // —— 站点默认模板（读-改-写，仅改动目标条目） —— //
+            function refreshSiteDefaultsFromStore(){
+                siteDefaults = loadSiteDefaults();
+            }
+
+            D.siteNewBtn.addEventListener('click', ()=> { 
+                clearSiteEditFields(); 
+                D.sitePatternInput.focus(); 
+            });
+
             D.siteSaveBtn.addEventListener('click', ()=>{
                 const t = translations[currentLang];
                 const pattern = (D.sitePatternInput.value||'').trim();
@@ -1153,45 +1186,57 @@ USER QUESTION (paste multi-paragraph content between the markers):
                 if(!pattern){ alert(t.alertSitePatternRequired); return; }
                 if(!tplId){ alert(t.alertSiteTemplateRequired); return; }
 
+                // 读最新存储
+                let latest = loadSiteDefaults();
+
                 const selectedId = D.siteList.value;
                 if(selectedId){
-                    // 更新现有规则（不改变原顺序）
-                    const idx = siteDefaults.findIndex(r=>r.id===selectedId);
+                    // 更新现有：只改该 id 的字段，不改变顺序
+                    const idx = latest.findIndex(r=>r.id===selectedId);
                     if(idx>=0){
-                        siteDefaults[idx].pattern = pattern;
-                        siteDefaults[idx].templateId = tplId;
+                        latest[idx] = { ...latest[idx], pattern, templateId: tplId };
+                    }else{
+                        // 若本页面的 id 不在存储（另一页刚改了列表），则把本条按“新建”追加
+                        latest.push({ id: selectedId, pattern, templateId: tplId, createdAt: Date.now() });
                     }
                 }else{
-                    // 新建：追加到末尾（早保存优先：靠前的优先）
-                    siteDefaults.push({ id: genId('map'), pattern, templateId: tplId, createdAt: Date.now() });
+                    // 新建：末尾追加（保持“早保存优先”）
+                    latest.push({ id: genId('map'), pattern, templateId: tplId, createdAt: Date.now() });
                 }
-                saveSiteDefaults(siteDefaults);
+
+                saveSiteDefaults(latest);
+                // 刷新本页内存 + UI
+                refreshSiteDefaultsFromStore();
                 populateSiteList();
                 alert(t.alertSiteSaved);
-
                 // 保存后，主界面默认选中可能变化
                 applyActiveDefaultToMainSelect();
             });
+
             D.siteDeleteBtn.addEventListener('click', ()=>{
                 const t = translations[currentLang];
                 const selectedId = D.siteList.value;
                 if(!selectedId){ alert(t.alertSiteSelectFirst); return; }
-                const idx = siteDefaults.findIndex(r=>r.id===selectedId);
-                if(idx>=0){ siteDefaults.splice(idx,1); saveSiteDefaults(siteDefaults); }
+                // 读最新 → 删该 id → 写回
+                let latest = loadSiteDefaults();
+                const idx = latest.findIndex(r=>r.id===selectedId);
+                if(idx>=0){ latest.splice(idx,1); }
+                saveSiteDefaults(latest);
+
+                refreshSiteDefaultsFromStore();
                 populateSiteList();
                 clearSiteEditFields();
                 alert(t.alertSiteDeleted);
-
-                // 删除后，主界面默认选中可能变化
                 applyActiveDefaultToMainSelect();
             });
+
             D.siteList.addEventListener('change', ()=>{
                 const id = D.siteList.value;
                 const rule = siteDefaults.find(r=>r.id===id);
                 loadSiteRuleToFields(rule);
             });
 
-            // 应用（主界面按钮）：使用当前编辑模板 + 聊天栏内容
+            // —— 应用（主界面按钮 & 快速应用默认模板） —— //
             D.submitBtn.addEventListener('click',()=>{
                 const template=D.templateBodyTextarea.value;
                 const res = getFinalFromChatByTemplateStr(template);
@@ -1202,7 +1247,6 @@ USER QUESTION (paste multi-paragraph content between the markers):
                 D.contentPanel.classList.add('hidden');
             });
 
-            // 快速应用默认模板：使用站点默认模板（若无命中，使用全局默认）
             D.quickApplyButton.addEventListener('click', ()=>{
                 const tpl = getActiveDefaultTemplateString(prompts);
                 const res = getFinalFromChatByTemplateStr(tpl);
@@ -1213,7 +1257,10 @@ USER QUESTION (paste multi-paragraph content between the markers):
                 document.querySelector('#prompt-helper-content')?.classList.add('hidden');
             });
 
-            loadPrompts();
+            // 初次根据最新存储把主界面模板对齐一次（防并发）
+            prompts = loadPromptsLatest();
+            siteDefaults = loadSiteDefaults();
+            updateUI();
         }
 
         if(getCurrentSiteConfig()){ init(); }
