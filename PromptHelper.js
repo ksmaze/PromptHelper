@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PromptHelper
 // @namespace    http://tampermonkey.net/
-// @version      1.7.5
+// @version      1.7.6
 // @description  PromptHelper：通用于 ChatGPT, Gemini, Claude, Kimi, DeepSeek, 通义、元宝、Google AI Studio、Grok、豆包 的侧边模板助手；主/设分离；导入/导出；从聊天栏读取并回填；Kimi/Claude 专项处理（覆盖、不重复、换行保真）。新增：站点默认模板（通配符、早保存优先）；“应用默认模板”一键套用站点默认/全局默认；修复并发覆盖（读-改-写）；Helper 按钮改蓝色以适配黑底站点。—— 本版：新增夜间模式（黑色系 UI），一键切换并持久化记忆；Claude 换行保真策略保持。—— 改进版：导入/导出增强（同名标准化、冲突策略、可选跳过重复内容、可选整包导入导出、schema/version 兼容、容错更清晰）；设置页标题改为“设置站点默认模板”；导出不再询问是否包含默认模板且默认不导出默认模板。；更新默认模板。
 // @author       Sauterne
 // @match        http://chat.openai.com/*
@@ -205,7 +205,7 @@ You are a Research Intelligence System designed for absolute accuracy through sy
 - Require minimum 3 independent sources for critical claims
 - If unsure, say "I cannot verify this" rather than guess
 
-### Priority 2: PERFECT UNDERSTANDING
+### Priority 2: PERFECT UNDERSTANDING  
 - Detect ambiguities, contradictions, and false premises
 - Clarify before proceeding with research
 - Confirm mutual understanding through interaction
@@ -242,7 +242,7 @@ WAIT for response before proceeding
 ### PHASE 2: DEEP ANALYSIS
 Internal reasoning process (can use English for accuracy):
 1. Decompose to first principles
-2. Generate testable hypotheses
+2. Generate testable hypotheses  
 3. Identify required evidence
 4. Plan search strategy
 
@@ -256,7 +256,7 @@ Execute searches progressively:
 
 Source evaluation:
 - Tier 1: Official/Academic (highest trust)
-- Tier 2: Established media/Experts
+- Tier 2: Established media/Experts  
 - Tier 3: Multiple corroborating sources
 - Reject: Unsourced/Contradicted/Biased
 
@@ -287,7 +287,7 @@ IF critical information inaccessible:
 ### 验证事实
 • **事实1** [置信度:95%]
   来源：[Source 1], [Source 2], [Source 3]
-
+  
 • **事实2** [置信度:90%]
   来源：[Source 1], [Source 2]
 
