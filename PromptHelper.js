@@ -460,7 +460,7 @@ Execute this protocol now. Prioritize accuracy over speed. Think deeply, researc
                     position: absolute !important;
                     top: 0 !important;
                     right: var(--ph-toggle-width, 120px) !important;
-                    width: 400px !important;
+                    width: min(400px, calc(100vw - var(--ph-toggle-width, 120px) - 16px)) !important;
                     background-color: var(--ph-bg) !important;
                     border: 1px solid var(--ph-border) !important;
                     border-radius: 8px !important;
@@ -559,6 +559,27 @@ Execute this protocol now. Prioritize accuracy over speed. Think deeply, researc
                 #prompt-helper-container #ph-settings-view { display: flex !important; flex-direction: column !important; gap: 10px !important; }
                 #prompt-helper-content .ph-grid { display: grid !important; grid-template-columns: 1fr 1fr !important; gap: 8px 10px !important; }
                 @media (max-width: 480px) { #prompt-helper-content .ph-grid { grid-template-columns: 1fr !important; } }
+
+                /* 响应式：小屏优化 */
+                @media (max-width: 768px) {
+                    #prompt-helper-container {
+                        top: 12px !important;
+                        font-size: 14px !important;
+                        --ph-toggle-width: clamp(84px, 28vw, 120px) !important;
+                        --ph-toggle-height: 36px !important;
+                    }
+                    #prompt-helper-toggle { border-radius: 8px 0 0 8px !important; }
+                    #prompt-helper-quickapply {
+                        height: 30px !important;
+                        font-size: 12px !important;
+                        border-radius: 8px 0 0 8px !important;
+                    }
+                    #prompt-helper-content {
+                        padding: 12px !important;
+                        max-height: calc(100vh - 24px) !important;
+                    }
+                    #prompt-helper-content h3 { font-size: 16px !important; }
+                }
             `);
         }
 
